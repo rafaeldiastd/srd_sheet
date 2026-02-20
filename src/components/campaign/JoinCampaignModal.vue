@@ -6,7 +6,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
 import { X, Key } from 'lucide-vue-next'
 
@@ -17,27 +16,18 @@ const authStore = useAuthStore()
 const code = ref('')
 const loading = ref(false)
 const error = ref('')
-const sheets = ref<any[]>([])
-const selectedSheetId = ref<string>('')
-const step = ref<'code' | 'sheet'>('code')
-const pendingCampaign = ref<any>(null)
 
-async function fetchMySheets() {
-    const { data } = await supabase.from('sheets').select('id, name, class, level').order('name')
-    if (data) sheets.value = data
-}
-
-async function verifyCode() {
+async function joinCampaign() {
     if (!code.value.trim()) return
     loading.value = true
     error.value = ''
 
-    // 1. Find Campaign
+    // 1. Find Campaign by join_code
     const { data: campaign, error: findError } = await supabase
         .from('campaigns')
-        .select('*')
+        .select('id, name')
         .eq('join_code', code.value.trim().toUpperCase())
-        .single()
+        .maybeSingle()
 
     if (findError || !campaign) {
         error.value = 'Campanha não encontrada. Verifique o código.'
@@ -45,39 +35,28 @@ async function verifyCode() {
         return
     }
 
-    // 2. Check if already joined
+    // 2. Check if already a member
     const { data: existing } = await supabase
         .from('campaign_members')
         .select('id')
         .eq('campaign_id', campaign.id)
         .eq('user_id', authStore.user?.id)
-        .single()
+        .maybeSingle()
 
     if (existing) {
-        error.value = 'Você já está nessa campanha.'
         router.push(`/campaign/${campaign.id}`)
         emit('close')
         return
     }
 
-    pendingCampaign.value = campaign
-    await fetchMySheets()
-    loading.value = false
-    step.value = 'sheet'
-}
-
-async function completeJoin() {
-    if (!pendingCampaign.value) return
-    loading.value = true
-
-    // 3. Join with Sheet
+    // 3. Join (no sheet linked — user picks sheet inside the campaign)
     const { error: joinError } = await supabase
         .from('campaign_members')
         .insert({
-            campaign_id: pendingCampaign.value.id,
+            campaign_id: campaign.id,
             user_id: authStore.user?.id,
             role: 'player',
-            sheet_id: selectedSheetId.value || null
+            sheet_id: null
         })
 
     if (joinError) {
@@ -89,7 +68,7 @@ async function completeJoin() {
 
     loading.value = false
     emit('close')
-    router.push(`/campaign/${pendingCampaign.value.id}`)
+    router.push(`/campaign/${campaign.id}`)
 }
 </script>
 
@@ -106,42 +85,17 @@ async function completeJoin() {
             </CardHeader>
 
             <CardContent class="space-y-4 pt-4">
-                <template v-if="step === 'code'">
-                    <div class="space-y-1">
-                        <Label>Código de Convite</Label>
-                        <Input v-model="code" placeholder="Ex: X9Y2Z1" class="uppercase font-mono" />
-                    </div>
-                </template>
-
-                <template v-else>
-                    <div class="bg-zinc-900/50 p-3 rounded border border-zinc-800 mb-4">
-                        <p class="text-sm font-bold text-primary">{{ pendingCampaign?.name }}</p>
-                        <p class="text-xs text-muted-foreground">Mestre: Voc&ecirc;</p> <!-- TODO fetch DM name -->
-                    </div>
-                    <div class="space-y-1">
-                        <Label>Escolha seu Personagem (Opcional)</Label>
-                        <Select v-model="selectedSheetId">
-                            <SelectTrigger>
-                                <SelectValue placeholder="Selecione uma ficha..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem v-for="s in sheets" :key="s.id" :value="s.id">
-                                    {{ s.name }} ({{ s.class }} {{ s.level }})
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </template>
-
+                <div class="space-y-1">
+                    <Label>Código de Convite</Label>
+                    <Input v-model="code" placeholder="Ex: X9Y2Z1" class="uppercase font-mono"
+                        @keyup.enter="joinCampaign" />
+                </div>
                 <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
             </CardContent>
 
             <CardFooter class="flex justify-end gap-2 pt-2">
                 <Button variant="ghost" @click="emit('close')">Cancelar</Button>
-                <Button v-if="step === 'code'" @click="verifyCode" :disabled="loading || !code.trim()">
-                    {{ loading ? 'Verificando...' : 'Próximo' }}
-                </Button>
-                <Button v-else @click="completeJoin" :disabled="loading">
+                <Button @click="joinCampaign" :disabled="loading || !code.trim()">
                     {{ loading ? 'Entrando...' : 'Entrar na Campanha' }}
                 </Button>
             </CardFooter>

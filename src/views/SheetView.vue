@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ChevronLeft, Pencil, Save, X, Star, Zap,
   Heart, Wind, Settings, Shield, Sword, Plus, Trash2,
-  Search, BookOpen, Package, Minus, MessageSquare
+  Search, BookOpen, Package, Minus, MessageSquare, Flame, RefreshCw
 } from 'lucide-vue-next'
 import SheetChatOverlay from '@/components/campaign/SheetChatOverlay.vue'
 import { SKILLS_DATA, CLASS_SKILLS, CLASS_SKILL_POINTS } from '@/data/dnd35'
@@ -474,7 +474,49 @@ function removeSpell(i: number) { editedData.value.spells = editedData.value.spe
 function removeShortcut(i: number) { editedData.value.shortcuts = editedData.value.shortcuts.filter((_: any, idx: number) => idx !== i) }
 function removeItem(i: number) { editedData.value.equipment = editedData.value.equipment.filter((_: any, idx: number) => idx !== i) }
 
+// ── Class Resources ─────────────────────────────────────────────────────
+const newResName = ref('')
+const newResMax = ref(1)
+const savingRes = ref(false)
+
+function addResource() {
+  if (!newResName.value.trim() || !sheet.value) return
+  const res = { name: newResName.value.trim(), max: Number(newResMax.value), current: Number(newResMax.value) }
+  sheet.value.data.resources = [...(sheet.value.data.resources || []), res]
+  newResName.value = ''
+  newResMax.value = 1
+  saveResources()
+}
+
+function removeResource(i: number) {
+  if (!sheet.value) return
+  sheet.value.data.resources = (sheet.value.data.resources || []).filter((_: any, idx: number) => idx !== i)
+  saveResources()
+}
+
+function adjustResource(i: number, delta: number) {
+  if (!sheet.value) return
+  const res = sheet.value.data.resources[i]
+  res.current = Math.max(0, Math.min(res.max, (res.current ?? res.max) + delta))
+  saveResources()
+}
+
+function resetResources() {
+  if (!sheet.value) return
+  for (const res of (sheet.value.data.resources || [])) res.current = res.max
+  saveResources()
+}
+
+async function saveResources() {
+  if (!sheet.value) return
+  savingRes.value = true
+  await supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  savingRes.value = false
+}
+
 onMounted(fetchSheet)
+
+
 </script>
 
 <template>
@@ -693,7 +735,7 @@ onMounted(fetchSheet)
              TABS
              ═════ -->
         <Tabs default-value="skills" class="w-full">
-          <TabsList class="grid w-full grid-cols-3 sm:grid-cols-6 bg-card border border-border h-auto p-1 gap-1">
+          <TabsList class="grid w-full grid-cols-4 sm:grid-cols-7 bg-card border border-border h-auto p-1 gap-1">
             <TabsTrigger value="shortcuts"
               class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
               <Sword class="w-3.5 h-3.5" /> Atalhos
@@ -717,6 +759,10 @@ onMounted(fetchSheet)
             <TabsTrigger value="config"
               class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
               <Settings class="w-3.5 h-3.5" /> Config
+            </TabsTrigger>
+            <TabsTrigger value="resources"
+              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+              <Flame class="w-3.5 h-3.5" /> Recursos
             </TabsTrigger>
           </TabsList>
 
@@ -976,20 +1022,20 @@ onMounted(fetchSheet)
                       <span class="text-[10px] text-muted-foreground">Usado / Máximo</span>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                      <div v-for="lvl in SPELL_LEVELS.filter(l => spellSlotsMax[l] > 0 || editMode)" :key="lvl"
+                      <div v-for="lvl in SPELL_LEVELS.filter(l => (spellSlotsMax[l] ?? 0) > 0 || editMode)" :key="lvl"
                         class="flex flex-col items-center gap-0.5 p-1.5 rounded bg-zinc-900 border border-zinc-800 min-w-[44px]">
                         <span class="text-[9px] font-bold text-muted-foreground uppercase">{{ lvl === 0 ? 'Truq' : `Nív
                           ${lvl}` }}</span>
                         <div class="flex items-center gap-0.5">
-                          <button v-if="spellSlotsMax[lvl] > 0" @click="adjustSlotUsed(lvl, 1)"
+                          <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, 1)"
                             class="w-5 h-5 rounded text-[10px] font-bold bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 transition-colors">
                             +
                           </button>
                           <span class="text-sm font-bold tabular-nums min-w-[24px] text-center"
-                            :class="(spellSlotsUsed[lvl] ?? 0) >= spellSlotsMax[lvl] ? 'text-red-400' : 'text-foreground'">
-                            {{ spellSlotsUsed[lvl] ?? 0 }}/{{ spellSlotsMax[lvl] ?? 0 }}
+                            :class="((spellSlotsUsed as any)[lvl] ?? 0) >= ((spellSlotsMax as any)[lvl] ?? 0) ? 'text-red-400' : 'text-foreground'">
+                            {{ (spellSlotsUsed as any)[lvl] ?? 0 }}/{{ (spellSlotsMax as any)[lvl] ?? 0 }}
                           </span>
-                          <button v-if="spellSlotsMax[lvl] > 0" @click="adjustSlotUsed(lvl, -1)"
+                          <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, -1)"
                             class="w-5 h-5 rounded text-[10px] font-bold bg-muted text-muted-foreground hover:bg-muted/60 border border-border transition-colors">
                             −
                           </button>
@@ -1003,7 +1049,7 @@ onMounted(fetchSheet)
                             class="w-4 h-4 rounded text-[9px] bg-muted text-muted-foreground hover:bg-muted/60 border border-border">+</button>
                         </div>
                       </div>
-                      <div v-if="SPELL_LEVELS.filter(l => spellSlotsMax[l] > 0).length === 0 && !editMode"
+                      <div v-if="SPELL_LEVELS.filter(l => (spellSlotsMax as any)[l] > 0).length === 0 && !editMode"
                         class="text-xs text-muted-foreground italic py-1">
                         Ative o modo edição para configurar slots.
                       </div>
@@ -1447,6 +1493,104 @@ onMounted(fetchSheet)
             </div>
 
           </TabsContent>
+
+          <!-- ── RECURSOS DE CLASSE ── -->
+          <TabsContent value="resources" class="mt-4">
+            <Card>
+              <CardHeader class="flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle class="text-base">Recursos de Classe</CardTitle>
+                  <p class="text-xs text-muted-foreground mt-0.5">Fúria, Música Bárdica, Imposição de Mãos...</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span v-if="savingRes" class="text-[10px] text-muted-foreground animate-pulse">Salvando...</span>
+                  <Button v-if="sheet?.data.resources?.length" variant="outline" size="sm" @click="resetResources"
+                    class="gap-1 text-xs h-7">
+                    <RefreshCw class="w-3 h-3" /> Restaurar
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent class="space-y-4">
+
+                <!-- Add form (edit mode) -->
+                <div v-if="editMode" class="flex gap-2 items-end p-3 rounded-lg bg-muted/30 border border-border">
+                  <div class="flex-1 space-y-1">
+                    <Label class="text-xs">Nome do recurso</Label>
+                    <Input v-model="newResName" placeholder="Ex: Fúria, Música Bárdica..." class="h-8" />
+                  </div>
+                  <div class="w-20 space-y-1">
+                    <Label class="text-xs">Máximo/dia</Label>
+                    <Input v-model.number="newResMax" type="number" min="1" max="99" class="h-8 text-center" />
+                  </div>
+                  <Button size="sm" @click="addResource" :disabled="!newResName.trim()" class="h-8 shrink-0">
+                    <Plus class="w-3 h-3 mr-1" /> Adicionar
+                  </Button>
+                </div>
+
+                <!-- Empty state -->
+                <div v-if="!sheet?.data.resources?.length"
+                  class="text-center py-10 text-muted-foreground/40 border-2 border-dashed border-zinc-800 rounded-xl">
+                  <Flame class="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p class="text-sm">Nenhum recurso cadastrado.</p>
+                  <p v-if="!editMode" class="text-xs mt-1 opacity-70">Ative o modo edição para adicionar.</p>
+                </div>
+
+                <!-- Resource cards -->
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div v-for="(res, i) in sheet.data.resources" :key="i"
+                    class="relative rounded-xl border border-border bg-zinc-900/60 p-4 space-y-3 hover:border-zinc-700 transition-colors">
+
+                    <!-- Header row -->
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <p class="font-bold text-sm text-foreground">{{ res.name }}</p>
+                        <p class="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">por dia</p>
+                      </div>
+                      <button v-if="editMode" @click="removeResource(i as number)"
+                        class="text-muted-foreground hover:text-destructive p-1 rounded-md hover:bg-destructive/10 transition-colors shrink-0">
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <!-- Dot pips (≤ 12) or numeric (> 12) -->
+                    <div v-if="res.max <= 12" class="flex flex-wrap gap-1.5">
+                      <div v-for="j in res.max" :key="j"
+                        class="w-5 h-5 rounded-full border-2 transition-all duration-150 cursor-pointer" :class="j <= (res.current ?? res.max)
+                          ? 'bg-primary border-primary shadow-[0_0_6px_rgba(var(--primary),0.5)]'
+                          : 'bg-transparent border-zinc-700 opacity-40'"
+                        @click="adjustResource(i as number, j <= (res.current ?? res.max) ? -1 : 1)">
+                      </div>
+                    </div>
+                    <div v-else class="text-center">
+                      <span class="text-3xl font-extrabold font-serif tabular-nums"
+                        :class="(res.current ?? res.max) === 0 ? 'text-red-400' : 'text-primary'">
+                        {{ res.current ?? res.max }}
+                      </span>
+                      <span class="text-lg text-muted-foreground">/{{ res.max }}</span>
+                    </div>
+
+                    <!-- +/- controls -->
+                    <div class="flex items-center justify-between pt-1 border-t border-border/40">
+                      <button @click="adjustResource(i as number, -1)" :disabled="(res.current ?? res.max) <= 0"
+                        class="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold bg-muted hover:bg-red-950/40 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                        <Minus class="w-3 h-3" /> Usar
+                      </button>
+                      <span class="text-xs text-muted-foreground tabular-nums font-mono">
+                        {{ res.current ?? res.max }}&nbsp;/&nbsp;{{ res.max }}
+                      </span>
+                      <button @click="adjustResource(i as number, 1)" :disabled="(res.current ?? res.max) >= res.max"
+                        class="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold bg-muted hover:bg-primary/20 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                        <Plus class="w-3 h-3" /> Recuperar
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+
+              </CardContent>
+            </Card>
+          </TabsContent>
+
         </Tabs>
 
       </div>

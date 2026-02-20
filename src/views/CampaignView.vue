@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -7,7 +7,8 @@ import ChatSidebar from '@/components/campaign/ChatSidebar.vue'
 import CampaignRollPanel from '@/components/campaign/CampaignRollPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Scroll, Users, Copy, LogOut, Shield, Crown } from 'lucide-vue-next'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Scroll, Users, Copy, LogOut, Shield, Crown, BookOpen, Check } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,9 +20,21 @@ const members = ref<any[]>([])
 const loading = ref(true)
 const isDM = ref(false)
 
+// Sheet selector state
+const mySheets = ref<any[]>([])
+const selectedSheetId = ref<string>('')
+const myMemberId = ref<string>('')
+const savingSheet = ref(false)
+const sheetSaved = ref(false)
+
+const myCurrentSheetId = computed(() => {
+    const me = members.value.find(m => m.user_id === authStore.user?.id)
+    return me?.sheet_id ?? null
+})
+
 async function fetchCampaign() {
     loading.value = true
-    // Get Campaign Details
+
     const { data: campaignData, error: campaignError } = await supabase
         .from('campaigns')
         .select('*')
@@ -30,37 +43,61 @@ async function fetchCampaign() {
 
     if (campaignError) {
         console.error('Error fetching campaign:', campaignError)
-        router.push('/dashboard') // Redirect if not found or no access
+        router.push('/dashboard')
         return
     }
     campaign.value = campaignData
+    isDM.value = campaignData.dm_id === authStore.user?.id
 
-    // Identify Role
-    if (campaignData.dm_id === authStore.user?.id) {
-        isDM.value = true
-    }
-
-    // Get Members with Sheet info
-    // We join campaign_members -> sheets
-    const { data: memberData, error: memberError } = await supabase
+    const { data: memberData } = await supabase
         .from('campaign_members')
-        .select(`
-        *,
-        sheets (id, name, class, level, data)
-    `)
+        .select('*, sheets (id, name, class, level, data)')
         .eq('campaign_id', campaignId)
 
     if (memberData) {
         members.value = memberData
+        const me = memberData.find((m: any) => m.user_id === authStore.user?.id)
+        if (me) {
+            myMemberId.value = me.id
+            selectedSheetId.value = me.sheet_id ?? ''
+        }
     }
 
     loading.value = false
 }
 
+async function fetchMySheets() {
+    const { data } = await supabase
+        .from('sheets')
+        .select('id, name, class, level')
+        .order('name')
+    if (data) mySheets.value = data
+}
+
+async function saveActiveSheet() {
+    if (!myMemberId.value) return
+    savingSheet.value = true
+    sheetSaved.value = false
+
+    const { error } = await supabase
+        .from('campaign_members')
+        .update({ sheet_id: selectedSheetId.value || null })
+        .eq('id', myMemberId.value)
+
+    if (!error) {
+        // Update local state
+        const me = members.value.find(m => m.user_id === authStore.user?.id)
+        if (me) me.sheet_id = selectedSheetId.value || null
+
+        sheetSaved.value = true
+        setTimeout(() => { sheetSaved.value = false }, 2000)
+    }
+    savingSheet.value = false
+}
+
 function copyJoinCode() {
     if (campaign.value?.join_code) {
         navigator.clipboard.writeText(campaign.value.join_code)
-        // Toast success?
     }
 }
 
@@ -70,8 +107,9 @@ function leaveCampaign() {
     }
 }
 
-onMounted(() => {
-    fetchCampaign()
+onMounted(async () => {
+    await fetchCampaign()
+    await fetchMySheets()
 })
 </script>
 
@@ -115,6 +153,7 @@ onMounted(() => {
                 </div>
 
                 <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+
                     <!-- Members Card -->
                     <Card class="bg-zinc-900/40 border-zinc-800 md:col-span-2">
                         <CardHeader>
@@ -145,7 +184,7 @@ onMounted(() => {
                                             <div class="flex items-center gap-2">
                                                 <p class="text-sm font-bold text-zinc-200">
                                                     {{ member.sheets?.name || (member.user_id === authStore.user?.id ?
-                                                        'Você' : 'Jogador') }}
+                                                        'Você (sem ficha)' : 'Jogador') }}
                                                 </p>
                                                 <span v-if="member.role === 'dm'"
                                                     class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">MESTRE</span>
@@ -170,15 +209,54 @@ onMounted(() => {
                         </CardContent>
                     </Card>
 
-                    <!-- Quick Info / Status -->
-                    <Card class="bg-zinc-900/40 border-zinc-800">
-                        <CardHeader>
-                            <CardTitle class="text-base">Mesa de Jogo</CardTitle>
-                        </CardHeader>
-                        <CardContent class="text-sm text-muted-foreground">
-                            <p>Funcionalidade de rolagens públicas e mapas em breve.</p>
-                        </CardContent>
-                    </Card>
+                    <!-- Right Column -->
+                    <div class="flex flex-col gap-4">
+                        <!-- Active Sheet Selector (players only) -->
+                        <Card v-if="!isDM" class="bg-zinc-900/40 border-zinc-800">
+                            <CardHeader class="pb-2">
+                                <CardTitle class="text-base flex items-center gap-2">
+                                    <BookOpen class="w-4 h-4 text-primary" /> Minha Ficha Ativa
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent class="space-y-3">
+                                <p class="text-xs text-muted-foreground">Troque sua ficha a qualquer momento.</p>
+                                <Select v-model="selectedSheetId">
+                                    <SelectTrigger class="h-9 text-sm bg-zinc-950 border-zinc-700">
+                                        <SelectValue placeholder="Nenhuma ficha selecionada" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="">Nenhuma</SelectItem>
+                                        <SelectItem v-for="s in mySheets" :key="s.id" :value="s.id">
+                                            {{ s.name }} — {{ s.class }} Nvl {{ s.level }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+
+                                <Button class="w-full h-8 text-xs gap-1.5"
+                                    :disabled="savingSheet || selectedSheetId === (myCurrentSheetId ?? '')"
+                                    @click="saveActiveSheet">
+                                    <Check v-if="sheetSaved" class="w-3 h-3" />
+                                    {{ sheetSaved ? 'Salvo!' : savingSheet ? 'Salvando...' : 'Usar esta ficha' }}
+                                </Button>
+
+                                <Button v-if="selectedSheetId" variant="ghost"
+                                    class="w-full h-8 text-xs gap-1 hover:text-primary hover:bg-primary/10"
+                                    @click="router.push(`/sheet/${selectedSheetId}`)">
+                                    <Scroll class="w-3 h-3" /> Abrir ficha completa
+                                </Button>
+                            </CardContent>
+                        </Card>
+
+                        <!-- Info Card -->
+                        <Card class="bg-zinc-900/40 border-zinc-800">
+                            <CardHeader>
+                                <CardTitle class="text-base">Mesa de Jogo</CardTitle>
+                            </CardHeader>
+                            <CardContent class="text-sm text-muted-foreground">
+                                <p>Funcionalidade de rolagens públicas e mapas em breve.</p>
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
             </div>
         </main>

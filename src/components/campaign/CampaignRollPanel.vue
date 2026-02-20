@@ -85,7 +85,7 @@ function evaluateFormula(formula: string): { label: string; result: number; brea
         if (term.includes('d')) {
             const [nStr, sidesStr] = term.split('d')
             const n = Math.abs(parseInt(nStr || '1', 10)) || 1
-            const sides = parseInt(sidesStr, 10)
+            const sides = parseInt(sidesStr ?? '0', 10)
             const sign = term.startsWith('-') ? -1 : 1
             let rollTotal = 0
             const rolls: number[] = []
@@ -124,7 +124,7 @@ async function sendRoll(label: string, formula: string, bonus = 0) {
 
     await supabase.from('messages').insert({
         campaign_id: props.campaignId,
-        user_id: authStore.user?.id,
+        user_id: authStore.user?.id ?? null,
         sender_name: memberName.value,
         content,
         type: 'roll',
@@ -137,15 +137,6 @@ async function rollInitiative() {
     await sendRoll('Iniciativa', `1d20`, initiative.value)
 }
 
-async function rollAttack(sc: any) {
-    if (sc.attackBonus !== undefined && sc.attackBonus !== '') {
-        const atkBonus = parseInt(sc.attackBonus) || 0
-        await sendRoll(`${sc.title} — Acerto`, '1d20', atkBonus)
-    }
-    if (sc.rollFormula) {
-        await sendRoll(`${sc.title} — Dano`, sc.rollFormula)
-    }
-}
 
 async function rollSpell(spell: any) {
     await sendRoll(spell.title || 'Magia', spell.rollFormula)
@@ -224,7 +215,8 @@ onMounted(fetchMySheet)
                                 :disabled="rolling" @click="sendRoll(attr.toUpperCase(), '1d20', attrMod(attr))">
                                 <p class="text-[9px] text-muted-foreground uppercase font-bold">{{ {
                                     str: 'FOR',
-                                    dex: 'DES', con: 'CON', int:'INT', wis:'SAB', cha:'CAR' }[attr] }}</p>
+                                    dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR'
+                                }[attr] }}</p>
                                 <p class="text-sm font-bold">{{ modStr(attrMod(attr)) }}</p>
                             </button>
                         </div>

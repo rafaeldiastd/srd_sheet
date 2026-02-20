@@ -18,7 +18,7 @@ async function fetchMyCampaigns() {
     loading.value = true
     // Fetch campaigns I am joined to
     // We can join campaign_members -> campaigns
-    const { data, error } = await supabase
+    const { data } = await supabase
         .from('campaign_members')
         .select(`
             campaign_id,

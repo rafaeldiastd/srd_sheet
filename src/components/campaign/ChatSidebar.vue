@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send, User as UserIcon, Dice5 } from 'lucide-vue-next'
+import { Send, Dice5 } from 'lucide-vue-next'
 
 const props = defineProps<{
     campaignId: string
@@ -109,7 +109,7 @@ onUnmounted(() => {
                         {{ msg.sender_name }}
                     </span>
                     <span class="text-[10px] text-muted-foreground">{{ new Date(msg.created_at).toLocaleTimeString([],
-                        { hour: '2-digit', minute:'2-digit'}) }}</span>
+                        { hour: '2-digit', minute: '2-digit' }) }}</span>
                 </div>
                 <div class="text-sm bg-zinc-900/80 px-3 py-2 rounded-lg border border-border/50 text-zinc-200 break-words"
                     :class="msg.type === 'roll' ? 'border-amber-500/30 bg-amber-950/10' : ''">
