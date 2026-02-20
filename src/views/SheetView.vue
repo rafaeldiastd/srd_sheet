@@ -241,6 +241,12 @@ async function saveEdit() {
   if (editedData.value) {
     editedData.value.spellSlotsMax = { ...spellSlotsMax.value }
     editedData.value.spellSlotsUsed = { ...spellSlotsUsed.value }
+    // Sync live-saved fields (HP, Recursos, Atalhos) back so they aren't overwritten
+    if (sheet.value?.data) {
+      editedData.value.hp_current = sheet.value.data.hp_current ?? editedData.value.hp_current
+      editedData.value.resources = sheet.value.data.resources ?? editedData.value.resources ?? []
+      editedData.value.shortcuts = sheet.value.data.shortcuts ?? editedData.value.shortcuts ?? []
+    }
   }
   const { error } = await supabase.from('sheets').update({
     name: editedData.value.name,
@@ -431,11 +437,11 @@ function resolveFormula(text: string) {
 // ── Feats / Spells / Items ────────────────────────────────────────────────
 // ── Feats / Spells / Items ────────────────────────────────────────────────
 function openEditor(type: 'feat' | 'spell' | 'shortcut', item?: any, index = -1) {
-  if (!editedData.value) return
+  // Feats/spells require edit mode; shortcuts can be edited any time
+  if (type !== 'shortcut' && !editedData.value) return
   editingType.value = type
   editingIndex.value = index
   if (item) {
-    // If item is string (legacy), convert to object structure
     if (typeof item === 'string') {
       tempItem.value = { title: item, description: '', rollFormula: '', modifiers: [], isAttack: false, spellLevel: 1 }
     } else {
@@ -448,17 +454,29 @@ function openEditor(type: 'feat' | 'spell' | 'shortcut', item?: any, index = -1)
 }
 
 function saveEditor() {
-  if (!tempItem.value.title.trim() || !editedData.value) return
+  if (!tempItem.value.title.trim()) return
   const listKey = editingType.value === 'feat' ? 'feats' : editingType.value === 'shortcut' ? 'shortcuts' : 'spells'
 
-  if (!editedData.value[listKey]) editedData.value[listKey] = []
-  const list = editedData.value[listKey]
-
-  if (editingIndex.value >= 0) {
-    list[editingIndex.value] = { ...tempItem.value }
-  } else {
-    list.push({ ...tempItem.value })
+  if (editedData.value) {
+    // Edit mode path: write into editedData
+    if (!editedData.value[listKey]) editedData.value[listKey] = []
+    const list = editedData.value[listKey]
+    if (editingIndex.value >= 0) list[editingIndex.value] = { ...tempItem.value }
+    else list.push({ ...tempItem.value })
+    // For shortcuts: also persist immediately
+    if (editingType.value === 'shortcut' && sheet.value) {
+      sheet.value.data.shortcuts = [...editedData.value.shortcuts]
+      saveShortcuts()
+    }
+  } else if (editingType.value === 'shortcut' && sheet.value) {
+    // Play-mode path: write directly to sheet.value.data
+    if (!sheet.value.data.shortcuts) sheet.value.data.shortcuts = []
+    const list = sheet.value.data.shortcuts
+    if (editingIndex.value >= 0) list[editingIndex.value] = { ...tempItem.value }
+    else list.push({ ...tempItem.value })
+    saveShortcuts()
   }
+
   isEditorOpen.value = false
 }
 
@@ -471,10 +489,28 @@ function removeModifier(i: number) { tempItem.value.modifiers.splice(i, 1) }
 function addItem() { if (!newItem.value.trim() || !editedData.value) return; editedData.value.equipment = [...(editedData.value.equipment || []), newItem.value.trim()]; newItem.value = '' }
 function removeFeat(i: number) { editedData.value.feats = editedData.value.feats.filter((_: any, idx: number) => idx !== i) }
 function removeSpell(i: number) { editedData.value.spells = editedData.value.spells.filter((_: any, idx: number) => idx !== i) }
-function removeShortcut(i: number) { editedData.value.shortcuts = editedData.value.shortcuts.filter((_: any, idx: number) => idx !== i) }
+function removeShortcut(i: number) {
+  if (editedData.value) {
+    editedData.value.shortcuts = editedData.value.shortcuts.filter((_: any, idx: number) => idx !== i)
+    if (sheet.value) sheet.value.data.shortcuts = [...editedData.value.shortcuts]
+  } else if (sheet.value) {
+    sheet.value.data.shortcuts = (sheet.value.data.shortcuts || []).filter((_: any, idx: number) => idx !== i)
+  }
+  saveShortcuts()
+}
 function removeItem(i: number) { editedData.value.equipment = editedData.value.equipment.filter((_: any, idx: number) => idx !== i) }
 
-// ── Class Resources ─────────────────────────────────────────────────────
+// ── Shortcuts direct save ─────────────────────────────────────────────
+const savingShortcuts = ref(false)
+async function saveShortcuts() {
+  if (!sheet.value) return
+  savingShortcuts.value = true
+  const { error } = await supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  if (error) console.error('Erro ao salvar atalhos:', error)
+  savingShortcuts.value = false
+}
+
+// ── Class Resources ─────────────────────────────────────────────
 const newResName = ref('')
 const newResMax = ref(1)
 const savingRes = ref(false)
@@ -510,7 +546,8 @@ function resetResources() {
 async function saveResources() {
   if (!sheet.value) return
   savingRes.value = true
-  await supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  const { error } = await supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  if (error) console.error('Erro ao salvar recursos:', error)
   savingRes.value = false
 }
 
@@ -731,867 +768,902 @@ onMounted(fetchSheet)
           </CardContent>
         </Card>
 
-        <!-- ═════
-             TABS
-             ═════ -->
-        <Tabs default-value="skills" class="w-full">
-          <TabsList class="grid w-full grid-cols-4 sm:grid-cols-7 bg-card border border-border h-auto p-1 gap-1">
-            <TabsTrigger value="shortcuts"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Sword class="w-3.5 h-3.5" /> Atalhos
-            </TabsTrigger>
-            <TabsTrigger value="skills"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Star class="w-3.5 h-3.5" /> Perícias
-            </TabsTrigger>
-            <TabsTrigger value="feats"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Zap class="w-3.5 h-3.5" /> Talentos
-            </TabsTrigger>
-            <TabsTrigger value="spells"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <BookOpen class="w-3.5 h-3.5" /> Magias
-            </TabsTrigger>
-            <TabsTrigger value="items"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Package class="w-3.5 h-3.5" /> Itens
-            </TabsTrigger>
-            <TabsTrigger value="config"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Settings class="w-3.5 h-3.5" /> Config
-            </TabsTrigger>
-            <TabsTrigger value="resources"
-              class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
-              <Flame class="w-3.5 h-3.5" /> Recursos
-            </TabsTrigger>
-          </TabsList>
+        <!-- ═════ TWO-COLUMN PLAY AREA ═════ -->
+        <div class="flex gap-4 items-start">
 
-          <!-- ── PERÍCIAS ── -->
-          <TabsContent value="skills" class="mt-4">
-            <Card>
-              <CardHeader class="flex-row items-center justify-between pb-3">
-                <CardTitle class="text-base">Perícias</CardTitle>
+          <!-- ── LEFT SIDEBAR (sticky, desktop only) ── -->
+          <div class="hidden lg:flex flex-col gap-3 w-72 shrink-0 sticky top-4 self-start">
+
+            <!-- Atalhos Panel -->
+            <Card class="border-zinc-800 bg-zinc-900/60">
+              <CardHeader class="pb-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Sword class="w-4 h-4 text-primary" />
+                    <CardTitle class="text-sm">Atalhos</CardTitle>
+                  </div>
+                  <Button @click="openEditor('shortcut')" size="sm" class="h-7 text-xs gap-1">
+                    <Plus class="w-3 h-3" /> Novo
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent>
-
-                <!-- EDIT MODE -->
-                <div v-if="editMode" class="space-y-4">
-                  <!-- Phase tabs -->
-                  <div class="flex gap-2 border-b border-border">
-                    <button @click="skillPhase = 'select'"
-                      class="px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
-                      :class="skillPhase === 'select' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'">
-                      1. Escolher
-                    </button>
-                    <button @click="skillPhase = 'allocate'"
-                      class="px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
-                      :class="skillPhase === 'allocate' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'">
-                      2. Graduações
-                    </button>
-                  </div>
-
-                  <!-- Phase 1: select -->
-                  <div v-if="skillPhase === 'select'" class="space-y-3">
-                    <div class="relative">
-                      <Search
-                        class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      <Input v-model="skillSearch" placeholder="Buscar perícia..." class="pl-9" />
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button v-for="skill in filteredSkillsList" :key="skill.name" @click="toggleSkillEdit(skill.name)"
-                        class="flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all text-sm"
-                        :class="selectedSkillNames.has(skill.name)
-                          ? 'bg-primary/10 border-primary text-foreground'
-                          : 'bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'">
-                        <div
-                          class="w-4 h-4 rounded flex items-center justify-center shrink-0 border-2 transition-colors"
-                          :class="selectedSkillNames.has(skill.name) ? 'bg-primary border-primary' : 'border-muted-foreground'">
-                          <span v-if="selectedSkillNames.has(skill.name)"
-                            class="text-primary-foreground text-[10px] font-bold">✓</span>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                          <span class="font-medium truncate block">{{ skill.name }}</span>
-                          <span class="text-[10px] text-muted-foreground uppercase">{{ skill.ability }}</span>
-                        </div>
-                        <span v-if="classSkillsSet.has(skill.name)"
-                          class="text-[10px] font-bold text-primary shrink-0">Classe</span>
-                      </button>
-                    </div>
-                    <div class="flex justify-between items-center pt-1">
-                      <p class="text-xs text-muted-foreground">{{ selectedSkillNames.size }} selecionadas</p>
-                      <Button size="sm" @click="skillPhase = 'allocate'">Distribuir →</Button>
-                    </div>
-                  </div>
-
-                  <!-- Phase 2: allocate with +/- buttons -->
-                  <div v-else class="space-y-3">
-                    <p v-if="allocatedSkills.length === 0"
-                      class="text-center text-muted-foreground text-sm py-4 italic">
-                      Nenhuma perícia selecionada. <button @click="skillPhase = 'select'"
-                        class="text-primary underline">Voltar</button>
-                    </p>
-                    <div v-else class="border border-border rounded-lg overflow-hidden">
-                      <div
-                        class="grid grid-cols-[1fr_50px_60px_110px_60px] bg-muted/40 border-b border-border px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase">
-                        <div>Perícia</div>
-                        <div class="text-center">Hab</div>
-                        <div class="text-center">Mod</div>
-                        <div class="text-center">Grads</div>
-                        <div class="text-center">Total</div>
-                      </div>
-                      <div class="divide-y divide-border">
-                        <div v-for="skill in allocatedSkills" :key="skill.name"
-                          class="grid grid-cols-[1fr_50px_60px_110px_60px] px-3 py-2 items-center text-sm hover:bg-muted/20"
-                          :class="classSkillsSet.has(skill.name) ? 'bg-primary/5' : ''">
-                          <div class="flex items-center gap-1.5">
-                            <div class="w-1.5 h-1.5 rounded-full shrink-0"
-                              :class="classSkillsSet.has(skill.name) ? 'bg-primary' : 'bg-border'"></div>
-                            <span class="truncate font-medium text-xs">{{ skill.name }}</span>
-                          </div>
-                          <div class="text-center text-[10px] text-muted-foreground uppercase font-mono">{{
-                            skill.ability }}
-                          </div>
-                          <div class="text-center text-muted-foreground text-sm">{{
-                            modStr(skillAbilityMod(skill.ability)) }}
-                          </div>
-
-                          <!-- +/- buttons: class skill ±1, cross-class ±0.5 -->
-                          <div class="flex items-center justify-center gap-1">
-                            <button @click="adjustRank(skill.name, -1)"
-                              class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                              <Minus class="w-3 h-3" />
-                            </button>
-                            <span class="w-10 text-center text-sm font-bold text-foreground tabular-nums">
-                              {{ editedData?.skills?.[skill.name] ?? 0 }}
-                            </span>
-                            <button @click="adjustRank(skill.name, 1)"
-                              class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                              <Plus class="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <div class="text-center font-bold text-primary text-sm">{{ modStrF(skillTotal(skill.name,
-                            skill.ability)) }}</div>
-                        </div>
-                      </div>
-                    </div>
-                    <!-- Skill point budget bar -->
+              <CardContent class="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+                <div v-if="!d?.shortcuts?.length" class="text-center py-5 text-muted-foreground/40">
+                  <Sword class="w-7 h-7 mx-auto mb-1.5 opacity-20" />
+                  <p class="text-xs">Nenhum atalho criado.</p>
+                </div>
+                <div v-else class="space-y-2">
+                  <div v-for="(sc, i) in d.shortcuts" :key="i"
+                    class="relative rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5 group hover:border-zinc-700 transition-colors cursor-pointer">
                     <div
-                      class="flex items-center justify-between gap-4 px-1 py-2 bg-muted/30 rounded-lg border border-border">
-                      <div class="flex items-center gap-2 flex-1">
-                        <span
-                          class="text-[11px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">Pontos</span>
-                        <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div class="h-full rounded-full transition-all duration-300"
-                            :style="{ width: Math.min(100, skillPointsSpent / skillPointsAvailable * 100) + '%' }"
-                            :class="skillPointsSpent > skillPointsAvailable ? 'bg-red-500' : skillPointsSpent === skillPointsAvailable ? 'bg-green-500' : 'bg-primary'" />
-                        </div>
-                        <span class="text-xs font-bold tabular-nums shrink-0"
-                          :class="skillPointsSpent > skillPointsAvailable ? 'text-red-400' : 'text-foreground'">
-                          {{ skillPointsSpent }} / {{ skillPointsAvailable }}
-                        </span>
-                        <span v-if="skillPointsSpent > skillPointsAvailable"
-                          class="text-[10px] text-red-400 font-semibold">(+{{ skillPointsSpent - skillPointsAvailable }}
-                          extra)</span>
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-between text-xs text-muted-foreground pt-1">
-                      <button @click="skillPhase = 'select'" class="underline hover:text-foreground">← Alterar
-                        seleção</button>
-                      <span>● Classe (±1) &nbsp; ○ Multiclasse (±0.5)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- VIEW MODE -->
-                <div v-else>
-                  <div v-if="activeSkills.length === 0" class="text-center py-8 text-muted-foreground italic">Nenhuma
-                    perícia
-                    com graduações.</div>
-                  <div v-else class="divide-y divide-border">
-                    <div v-for="s in activeSkills" :key="s.name"
-                      class="flex items-center justify-between py-2.5 px-1 hover:bg-muted/20 rounded transition-colors">
-                      <div>
-                        <span class="text-sm font-medium">{{ s.name }}</span>
-                        <span class="text-xs text-muted-foreground ml-2 uppercase">{{ s.ability }}</span>
-                      </div>
-                      <span class="bg-primary/10 text-primary font-bold text-sm px-3 py-0.5 rounded-full">
-                        {{ modStr(s.ranks + calcMod(attrTotal(s.ability))) }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="feats" class="mt-4">
-            <Card>
-              <CardHeader class="pb-3">
-                <div class="flex flex-col gap-3">
-                  <div class="flex items-center justify-between">
-                    <CardTitle class="text-base">Talentos
-                      <span class="text-xs font-normal text-muted-foreground ml-1">({{ filteredFeats.length }} de {{
-                        d.feats?.length || 0 }})</span>
-                    </CardTitle>
-                    <Button v-if="editMode" @click="openEditor('feat')" size="sm" class="gap-1">
-                      <Plus class="w-4 h-4" /> Novo Talento
-                    </Button>
-                  </div>
-                  <!-- Filter bar -->
-                  <div class="flex gap-2">
-                    <div class="relative flex-1">
-                      <Search
-                        class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                      <Input v-model="featSearch" placeholder="Pesquisar talentos..." class="pl-8 h-8 text-xs" />
-                    </div>
-                    <div class="flex gap-1">
-                      <button
-                        v-for="f in [{ v: 'all', label: 'Todos' }, { v: 'attack', label: 'Ataque' }, { v: 'passive', label: 'Passivo' }]"
-                        :key="f.v" class="px-2.5 py-1 rounded text-xs font-bold border transition-colors"
-                        :class="featTypeFilter === f.v ? 'bg-primary/20 border-primary text-primary' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
-                        @click="featTypeFilter = (f.v as any)">{{ f.label }}</button>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent class="space-y-2">
-                <div v-if="!d.feats?.length" class="text-center py-8 text-muted-foreground italic">Nenhum talento.</div>
-                <div v-else-if="filteredFeats.length === 0" class="text-center py-8 text-muted-foreground italic">Nenhum
-                  talento encontrado.</div>
-                <ul v-else class="space-y-2">
-                  <li v-for="({ feat, i }) in filteredFeats" :key="i"
-                    class="flex items-start gap-3 p-3 bg-muted/20 rounded-lg border border-border group relative transition-all hover:border-sidebar-accent"
-                    :class="typeof feat !== 'string' && feat.isAttack ? 'border-red-900/30 bg-red-950/10' : ''">
-                    <Zap class="w-4 h-4 shrink-0 mt-1"
-                      :class="typeof feat !== 'string' && feat.isAttack ? 'text-red-400' : 'text-primary'" />
-                    <div class="flex-1 space-y-1 cursor-pointer"
-                      @click="editMode ? openEditor('feat', feat, i as number) : null">
-                      <div class="text-sm font-semibold leading-none flex items-center gap-2">
-                        {{ typeof feat === 'string' ? resolveFormula(feat) : feat.title }}
-                        <Pencil v-if="editMode" class="w-3 h-3 opacity-0 group-hover:opacity-50" />
-                      </div>
-                      <div v-if="typeof feat !== 'string' && feat.description"
-                        class="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {{ resolveFormula(feat.description) }}
-                      </div>
-                      <div v-if="typeof feat !== 'string' && feat.rollFormula" class="mt-1">
-                        <code
-                          class="text-[10px] bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded text-muted-foreground font-mono">
-                    🎲 {{ resolveFormula(feat.rollFormula) }}
-                  </code>
-                      </div>
-                      <div v-if="typeof feat !== 'string' && feat.modifiers?.length" class="flex flex-wrap gap-1 mt-1">
-                        <span v-for="(mod, mi) in feat.modifiers" :key="mi"
-                          class="px-1.5 py-0.5 rounded bg-primary/10 text-[10px] font-bold text-primary uppercase">
-                          {{ mod.target }}: {{ modStr(mod.value) }}
-                        </span>
-                      </div>
-                    </div>
-                    <button v-if="editMode" @click.stop="removeFeat(i as number)"
-                      class="opacity-0 group-hover:opacity-100 text-destructive hover:text-red-400 transition-opacity mt-1">
-                      <Trash2 class="w-4 h-4" />
-                    </button>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <!-- ── MAGIAS ── -->
-          <TabsContent value="spells" class="mt-4">
-            <Card>
-              <CardHeader class="pb-3">
-                <div class="flex flex-col gap-3">
-                  <div class="flex items-center justify-between">
-                    <CardTitle class="text-base flex items-center gap-2">
-                      <BookOpen class="w-4 h-4 text-primary" /> Magias
-                      <span class="text-xs font-normal text-muted-foreground">({{ filteredSpells.length }} de {{
-                        d.spells?.length || 0 }})</span>
-                    </CardTitle>
-                    <Button v-if="editMode" @click="openEditor('spell')" size="sm" class="gap-1">
-                      <Plus class="w-4 h-4" /> Nova Magia
-                    </Button>
-                  </div>
-
-                  <!-- Spell Slots Widget -->
-                  <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                    <div class="flex items-center justify-between mb-2">
-                      <p class="text-xs font-bold text-muted-foreground uppercase tracking-wide">Slots de Magia</p>
-                      <span class="text-[10px] text-muted-foreground">Usado / Máximo</span>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                      <div v-for="lvl in SPELL_LEVELS.filter(l => (spellSlotsMax[l] ?? 0) > 0 || editMode)" :key="lvl"
-                        class="flex flex-col items-center gap-0.5 p-1.5 rounded bg-zinc-900 border border-zinc-800 min-w-[44px]">
-                        <span class="text-[9px] font-bold text-muted-foreground uppercase">{{ lvl === 0 ? 'Truq' : `Nív
-                          ${lvl}` }}</span>
-                        <div class="flex items-center gap-0.5">
-                          <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, 1)"
-                            class="w-5 h-5 rounded text-[10px] font-bold bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 transition-colors">
-                            +
-                          </button>
-                          <span class="text-sm font-bold tabular-nums min-w-[24px] text-center"
-                            :class="((spellSlotsUsed as any)[lvl] ?? 0) >= ((spellSlotsMax as any)[lvl] ?? 0) ? 'text-red-400' : 'text-foreground'">
-                            {{ (spellSlotsUsed as any)[lvl] ?? 0 }}/{{ (spellSlotsMax as any)[lvl] ?? 0 }}
-                          </span>
-                          <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, -1)"
-                            class="w-5 h-5 rounded text-[10px] font-bold bg-muted text-muted-foreground hover:bg-muted/60 border border-border transition-colors">
-                            −
-                          </button>
-                        </div>
-                        <!-- Adjust max in edit mode -->
-                        <div v-if="editMode" class="flex items-center gap-0.5 mt-0.5">
-                          <button @click="adjustSlotMax(lvl, -1)"
-                            class="w-4 h-4 rounded text-[9px] bg-muted text-muted-foreground hover:bg-muted/60 border border-border">−</button>
-                          <span class="text-[9px] text-muted-foreground px-0.5">máx</span>
-                          <button @click="adjustSlotMax(lvl, 1)"
-                            class="w-4 h-4 rounded text-[9px] bg-muted text-muted-foreground hover:bg-muted/60 border border-border">+</button>
-                        </div>
-                      </div>
-                      <div v-if="SPELL_LEVELS.filter(l => (spellSlotsMax as any)[l] > 0).length === 0 && !editMode"
-                        class="text-xs text-muted-foreground italic py-1">
-                        Ative o modo edição para configurar slots.
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Search + Filter bar -->
-                  <div class="flex gap-2">
-                    <div class="relative flex-1">
-                      <Search
-                        class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                      <Input v-model="spellSearch" placeholder="Pesquisar magias..." class="pl-8 h-8 text-xs" />
-                    </div>
-                    <div class="flex gap-1 flex-wrap">
-                      <button class="px-2.5 py-1 rounded text-xs font-bold border transition-colors"
-                        :class="spellLevelFilter === null ? 'bg-primary/20 border-primary text-primary' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
-                        @click="spellLevelFilter = null">
-                        Todos
-                      </button>
-                      <button v-for="lvl in SPELL_LEVELS" :key="lvl"
-                        class="px-2 py-1 rounded text-xs font-bold border transition-colors"
-                        :class="spellLevelFilter === lvl ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
-                        @click="spellLevelFilter = spellLevelFilter === lvl ? null : lvl">
-                        {{ lvl === 0 ? 'Truq' : `N${lvl}` }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent>
-                <div v-if="!d.spells?.length" class="text-center py-8 text-muted-foreground italic">Nenhuma magia
-                  registrada.
-                </div>
-                <div v-else-if="filteredSpells.length === 0" class="text-center py-8 text-muted-foreground italic">
-                  Nenhuma
-                  magia encontrada.</div>
-                <div v-else class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  <div v-for="({ spell, i }) in filteredSpells" :key="i"
-                    class="relative rounded-lg border p-3 group transition-all duration-200" :class="[
-                      typeof spell !== 'string' && spell.isAttack
-                        ? 'bg-red-950/10 border-red-900/30 hover:border-red-700/50'
-                        : 'bg-muted/20 border-border hover:border-sidebar-accent',
-                      dragOverIndex === i ? 'ring-2 ring-primary ring-offset-1 ring-offset-background scale-[0.98]' : '',
-                      editMode ? 'cursor-grab active:cursor-grabbing' : ''
-                    ]" :draggable="editMode" @dragstart="spellDragStart($event, i)"
-                    @dragover="spellDragOver($event, i)" @drop="spellDrop($event, i)" @dragend="spellDragEnd"
-                    @click="editMode ? openEditor('spell', spell, i) : null">
-                    <!-- Level badge -->
-                    <div class="absolute top-2 right-2 flex items-center gap-1">
-                      <span v-if="typeof spell !== 'string' && spell.spellLevel >= 0"
-                        class="text-[10px] font-bold tabular-nums rounded px-1.5 py-0.5 bg-muted border border-border text-muted-foreground">{{
-                          spell.spellLevel === 0 ? 'Truq.' : `N${spell.spellLevel}` }}</span>
-                      <span v-if="typeof spell !== 'string' && spell.isAttack"
-                        class="text-[9px] font-bold rounded px-1 py-0.5 bg-red-950 border border-red-900 text-red-400">ATK</span>
-                    </div>
-
-                    <!-- Icon + Title -->
-                    <div class="flex items-start gap-2 pr-10 mb-1">
-                      <BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5"
-                        :class="typeof spell !== 'string' && spell.isAttack ? 'text-red-400' : 'text-primary'" />
-                      <p class="text-sm font-semibold leading-tight">
-                        {{ typeof spell === 'string' ? resolveFormula(spell) : spell.title }}
-                      </p>
-                    </div>
-
-                    <!-- Description -->
-                    <p v-if="typeof spell !== 'string' && spell.description"
-                      class="text-xs text-muted-foreground line-clamp-2 mb-1.5 pl-5">
-                      {{ resolveFormula(spell.description) }}
-                    </p>
-
-                    <!-- Roll Formula -->
-                    <code v-if="typeof spell !== 'string' && spell.rollFormula"
-                      class="text-[10px] bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded text-muted-foreground font-mono block w-full text-center mt-1">
-                🎲 {{ resolveFormula(spell.rollFormula) }}
-              </code>
-
-                    <!-- Modifiers -->
-                    <div v-if="typeof spell !== 'string' && spell.modifiers?.length"
-                      class="flex flex-wrap gap-1 mt-1.5 pl-5">
-                      <span v-for="(mod, mi) in spell.modifiers" :key="mi"
-                        class="px-1.5 py-0.5 rounded bg-primary/10 text-[10px] font-bold text-primary uppercase">
-                        {{ mod.target }}: {{ modStr(mod.value) }}
-                      </span>
-                    </div>
-
-                    <!-- Edit Mode Overlay -->
-                    <div v-if="editMode"
-                      class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity rounded-lg z-10">
-                      <Button size="icon" variant="outline" class="h-7 w-7" @click.stop="openEditor('spell', spell, i)">
+                      class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 rounded-lg z-10 transition-opacity">
+                      <Button size="icon" variant="outline" class="h-6 w-6"
+                        @click.stop="openEditor('shortcut', sc, i as number)">
                         <Pencil class="w-3 h-3" />
                       </Button>
-                      <Button size="icon" variant="destructive" class="h-7 w-7" @click.stop="removeSpell(i)">
+                      <Button size="icon" variant="destructive" class="h-6 w-6"
+                        @click.stop="removeShortcut(i as number)">
                         <Trash2 class="w-3 h-3" />
                       </Button>
                     </div>
+                    <p class="text-xs font-bold truncate text-foreground">{{ sc.title }}</p>
+                    <p v-if="sc.description" class="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{{
+                      resolveFormula(sc.description) }}</p>
+                    <div v-if="sc.attackBonus || sc.rollFormula" class="flex gap-1.5 mt-1.5">
+                      <div v-if="sc.attackBonus"
+                        class="flex-1 bg-zinc-900 rounded px-1.5 py-1 text-center border border-zinc-800">
+                        <div class="text-[8px] uppercase text-zinc-500 font-bold">Acerto</div>
+                        <div class="text-xs font-mono font-bold text-green-400">{{ sc.attackBonus }}</div>
+                      </div>
+                      <div v-if="sc.rollFormula"
+                        class="flex-[2] bg-zinc-900 rounded px-1.5 py-1 text-center border border-zinc-800">
+                        <div class="text-[8px] uppercase text-zinc-500 font-bold">Dano</div>
+                        <div class="text-xs font-mono font-bold text-amber-400">{{ resolveFormula(sc.rollFormula) }}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <!-- ── ATALHOS ── -->
-          <TabsContent value="shortcuts" class="mt-4">
-            <div class="space-y-4">
-              <div class="flex justify-between items-center" v-if="editMode">
-                <p class="text-xs text-muted-foreground">Adicione ataques, poções ou ações frequentes.</p>
-                <Button @click="openEditor('shortcut')" size="sm" class="gap-1">
-                  <Plus class="w-4 h-4" /> Novo Atalho
-                </Button>
-              </div>
-
-              <div v-if="!d.shortcuts?.length"
-                class="text-center py-12 text-muted-foreground/50 border-2 border-dashed border-zinc-800 rounded-lg">
-                <Sword class="w-12 h-12 mx-auto mb-2 opacity-20" />
-                <span>Nenhum atalho criado.</span>
-              </div>
-
-              <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Card v-for="(sc, i) in d.shortcuts" :key="i"
-                  class="bg-zinc-900/50 hover:bg-zinc-900 border-zinc-800 transition-colors group relative overflow-hidden"
-                  @click="editMode ? openEditor('shortcut', sc, i as number) : null">
-                  <!-- edit overlay -->
-                  <div v-if="editMode"
-                    class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity z-10">
-                    <Button size="icon" variant="outline" class="h-8 w-8 rounded-full"
-                      @click="openEditor('shortcut', sc, i as number)">
-                      <Pencil class="w-4 h-4" />
-                    </Button>
-                    <Button size="icon" variant="destructive" class="h-8 w-8 rounded-full"
-                      @click.stop="removeShortcut(i as number)">
-                      <Trash2 class="w-4 h-4" />
+            <!-- Recursos Panel -->
+            <Card class="border-zinc-800 bg-zinc-900/60">
+              <CardHeader class="pb-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Flame class="w-4 h-4 text-primary" />
+                    <CardTitle class="text-sm">Recursos</CardTitle>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span v-if="savingRes" class="text-[10px] text-muted-foreground animate-pulse">...</span>
+                    <Button v-if="sheet?.data.resources?.length" variant="ghost" size="icon" @click="resetResources"
+                      class="h-6 w-6" title="Restaurar todos">
+                      <RefreshCw class="w-3 h-3" />
                     </Button>
                   </div>
-
-                  <CardHeader class="p-3 pb-2 flex flex-row items-center justify-between space-y-0">
-                    <CardTitle class="text-sm font-bold truncate pr-6">{{ sc.title }}</CardTitle>
-                    <div class="flex items-center gap-2">
-                      <div v-if="sc.cost"
-                        class="text-[10px] font-mono bg-zinc-950 px-1.5 py-0.5 rounded text-zinc-400 border border-zinc-800">
-                        {{ sc.cost }}</div>
+                </div>
+              </CardHeader>
+              <CardContent class="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+                <div v-if="editMode" class="flex gap-1.5 pb-2 border-b border-border/40">
+                  <Input v-model="newResName" placeholder="Nome..." class="h-7 text-xs flex-1" />
+                  <Input v-model.number="newResMax" type="number" min="1" class="h-7 text-xs w-12 text-center" />
+                  <Button size="sm" @click="addResource" :disabled="!newResName.trim()"
+                    class="h-7 text-xs px-2 shrink-0">+</Button>
+                </div>
+                <div v-if="!sheet?.data.resources?.length" class="text-center py-5 text-muted-foreground/40">
+                  <Flame class="w-7 h-7 mx-auto mb-1.5 opacity-20" />
+                  <p class="text-xs">Nenhum recurso.</p>
+                  <p v-if="!editMode" class="text-[10px] mt-0.5 opacity-60">Ative edição para adicionar.</p>
+                </div>
+                <div v-else class="space-y-2">
+                  <div v-for="(res, idx) in sheet.data.resources" :key="idx"
+                    class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5">
+                    <div class="flex items-center justify-between mb-1.5">
+                      <p class="text-xs font-bold text-foreground truncate">{{ res.name }}</p>
+                      <button v-if="editMode" @click="removeResource(idx as number)"
+                        class="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0 ml-1">
+                        <X class="w-3 h-3" />
+                      </button>
                     </div>
-                  </CardHeader>
-                  <CardContent class="p-3 pt-0 space-y-2">
-                    <div v-if="sc.description" class="text-xs text-muted-foreground line-clamp-2 min-h-[1.5em]">{{
-                      resolveFormula(sc.description) }}</div>
-
-                    <div class="flex items-center gap-2 mt-2">
-                      <div v-if="sc.attackBonus"
-                        class="flex-1 bg-zinc-950 rounded p-1.5 border border-zinc-900 text-center">
-                        <div class="text-[9px] uppercase text-zinc-500 font-bold mb-0.5">Acerto</div>
-                        <div class="font-mono text-sm font-bold text-green-400">{{ sc.attackBonus }}</div>
+                    <div v-if="res.max <= 10" class="flex flex-wrap gap-1 mb-1.5">
+                      <div v-for="j in res.max" :key="j"
+                        class="w-4 h-4 rounded-full border-2 cursor-pointer transition-all" :class="j <= (res.current ?? res.max)
+                          ? 'bg-primary border-primary'
+                          : 'bg-transparent border-zinc-700 opacity-40'"
+                        @click="adjustResource(idx as number, j <= (res.current ?? res.max) ? -1 : 1)">
                       </div>
-                      <div v-if="sc.rollFormula"
-                        class="flex-[2] bg-zinc-950 rounded p-1.5 border border-zinc-900 text-center">
-                        <div class="text-[9px] uppercase text-zinc-500 font-bold mb-0.5">Dano / Efeito</div>
-                        <div class="font-mono text-sm font-bold text-amber-400">{{ resolveFormula(sc.rollFormula) }}
+                    </div>
+                    <div v-else class="flex items-center justify-between mb-1.5">
+                      <span class="text-xl font-extrabold tabular-nums"
+                        :class="(res.current ?? res.max) === 0 ? 'text-red-400' : 'text-primary'">
+                        {{ res.current ?? res.max }}
+                      </span>
+                      <span class="text-xs text-muted-foreground">/{{ res.max }}</span>
+                    </div>
+                    <div class="flex gap-1.5">
+                      <button @click="adjustResource(idx as number, -1)" :disabled="(res.current ?? res.max) <= 0"
+                        class="flex-1 text-[10px] font-bold py-0.5 rounded bg-muted hover:bg-red-950/50 hover:text-red-400 disabled:opacity-30 transition-colors">
+                        − Usar
+                      </button>
+                      <button @click="adjustResource(idx as number, 1)" :disabled="(res.current ?? res.max) >= res.max"
+                        class="flex-1 text-[10px] font-bold py-0.5 rounded bg-muted hover:bg-primary/20 hover:text-primary disabled:opacity-30 transition-colors">
+                        + Rec.
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+          </div>
+          <!-- END LEFT SIDEBAR -->
+
+          <!-- ── RIGHT MAIN ── -->
+          <div class="flex-1 min-w-0 space-y-3">
+
+            <!-- Mobile: shortcuts + resources accordions -->
+            <div class="lg:hidden space-y-2">
+              <details class="rounded-lg border border-zinc-800 bg-zinc-900/60 group">
+                <summary
+                  class="flex items-center gap-2 px-4 py-3 cursor-pointer text-sm font-bold list-none select-none">
+                  <Sword class="w-4 h-4 text-primary" /> Atalhos de Combate
+                  <span class="ml-auto text-muted-foreground text-xs">{{ d?.shortcuts?.length ?? 0 }}</span>
+                </summary>
+                <div class="px-4 pb-3 space-y-2 border-t border-border/40">
+                  <div v-if="!d?.shortcuts?.length" class="text-center py-4 text-muted-foreground/40 text-xs">Nenhum
+                    atalho.
+                  </div>
+                  <div v-for="(sc, i) in d?.shortcuts" :key="i"
+                    class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5">
+                    <p class="text-xs font-bold">{{ sc.title }}</p>
+                    <div v-if="sc.rollFormula" class="text-xs font-mono text-amber-400 mt-0.5">{{
+                      resolveFormula(sc.rollFormula) }}</div>
+                  </div>
+                </div>
+              </details>
+              <details class="rounded-lg border border-zinc-800 bg-zinc-900/60">
+                <summary
+                  class="flex items-center gap-2 px-4 py-3 cursor-pointer text-sm font-bold list-none select-none">
+                  <Flame class="w-4 h-4 text-primary" /> Recursos de Classe
+                  <span class="ml-auto text-muted-foreground text-xs">{{ sheet?.data.resources?.length ?? 0 }}</span>
+                </summary>
+                <div class="px-4 pb-3 space-y-2 border-t border-border/40">
+                  <div v-if="!sheet?.data.resources?.length" class="text-center py-4 text-muted-foreground/40 text-xs">
+                    Nenhum
+                    recurso.</div>
+                  <div v-for="(res, idx) in sheet?.data.resources" :key="idx"
+                    class="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5">
+                    <div class="flex items-center justify-between mb-1.5">
+                      <p class="text-xs font-bold">{{ res.name }}</p>
+                      <span class="text-sm font-bold tabular-nums"
+                        :class="(res.current ?? res.max) === 0 ? 'text-red-400' : 'text-primary'">
+                        {{ res.current ?? res.max }}/{{ res.max }}
+                      </span>
+                    </div>
+                    <div class="flex gap-1.5">
+                      <button @click="adjustResource(idx as number, -1)" :disabled="(res.current ?? res.max) <= 0"
+                        class="flex-1 text-[10px] font-bold py-1 rounded bg-muted hover:bg-red-950/50 disabled:opacity-30 transition-colors">
+                        − Usar
+                      </button>
+                      <button @click="adjustResource(idx as number, 1)" :disabled="(res.current ?? res.max) >= res.max"
+                        class="flex-1 text-[10px] font-bold py-1 rounded bg-muted hover:bg-primary/20 disabled:opacity-30 transition-colors">
+                        + Rec.
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <!-- Main Tabs: Péric., Talentos, Magias, Itens, Config -->
+            <Tabs default-value="skills" class="w-full">
+              <TabsList class="grid w-full grid-cols-3 sm:grid-cols-5 bg-card border border-border h-auto p-1 gap-1">
+                <TabsTrigger value="skills"
+                  class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+                  <Star class="w-3.5 h-3.5" /> Perícias
+                </TabsTrigger>
+                <TabsTrigger value="feats"
+                  class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+                  <Zap class="w-3.5 h-3.5" /> Talentos
+                </TabsTrigger>
+                <TabsTrigger value="spells"
+                  class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+                  <BookOpen class="w-3.5 h-3.5" /> Magias
+                </TabsTrigger>
+                <TabsTrigger value="items"
+                  class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+                  <Package class="w-3.5 h-3.5" /> Itens
+                </TabsTrigger>
+                <TabsTrigger value="config"
+                  class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs py-1.5">
+                  <Settings class="w-3.5 h-3.5" /> Config
+                </TabsTrigger>
+              </TabsList>
+
+              <!-- ── PERÍCIAS ── -->
+              <TabsContent value="skills" class="mt-4">
+                <Card>
+                  <CardHeader class="flex-row items-center justify-between pb-3">
+                    <CardTitle class="text-base">Perícias</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+
+                    <!-- EDIT MODE -->
+                    <div v-if="editMode" class="space-y-4">
+                      <!-- Phase tabs -->
+                      <div class="flex gap-2 border-b border-border">
+                        <button @click="skillPhase = 'select'"
+                          class="px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+                          :class="skillPhase === 'select' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'">
+                          1. Escolher
+                        </button>
+                        <button @click="skillPhase = 'allocate'"
+                          class="px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+                          :class="skillPhase === 'allocate' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'">
+                          2. Graduações
+                        </button>
+                      </div>
+
+                      <!-- Phase 1: select -->
+                      <div v-if="skillPhase === 'select'" class="space-y-3">
+                        <div class="relative">
+                          <Search
+                            class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                          <Input v-model="skillSearch" placeholder="Buscar perícia..." class="pl-9" />
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button v-for="skill in filteredSkillsList" :key="skill.name"
+                            @click="toggleSkillEdit(skill.name)"
+                            class="flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all text-sm"
+                            :class="selectedSkillNames.has(skill.name)
+                              ? 'bg-primary/10 border-primary text-foreground'
+                              : 'bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'">
+                            <div
+                              class="w-4 h-4 rounded flex items-center justify-center shrink-0 border-2 transition-colors"
+                              :class="selectedSkillNames.has(skill.name) ? 'bg-primary border-primary' : 'border-muted-foreground'">
+                              <span v-if="selectedSkillNames.has(skill.name)"
+                                class="text-primary-foreground text-[10px] font-bold">✓</span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <span class="font-medium truncate block">{{ skill.name }}</span>
+                              <span class="text-[10px] text-muted-foreground uppercase">{{ skill.ability }}</span>
+                            </div>
+                            <span v-if="classSkillsSet.has(skill.name)"
+                              class="text-[10px] font-bold text-primary shrink-0">Classe</span>
+                          </button>
+                        </div>
+                        <div class="flex justify-between items-center pt-1">
+                          <p class="text-xs text-muted-foreground">{{ selectedSkillNames.size }} selecionadas</p>
+                          <Button size="sm" @click="skillPhase = 'allocate'">Distribuir →</Button>
+                        </div>
+                      </div>
+
+                      <!-- Phase 2: allocate with +/- buttons -->
+                      <div v-else class="space-y-3">
+                        <p v-if="allocatedSkills.length === 0"
+                          class="text-center text-muted-foreground text-sm py-4 italic">
+                          Nenhuma perícia selecionada. <button @click="skillPhase = 'select'"
+                            class="text-primary underline">Voltar</button>
+                        </p>
+                        <div v-else class="border border-border rounded-lg overflow-hidden">
+                          <div
+                            class="grid grid-cols-[1fr_50px_60px_110px_60px] bg-muted/40 border-b border-border px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase">
+                            <div>Perícia</div>
+                            <div class="text-center">Hab</div>
+                            <div class="text-center">Mod</div>
+                            <div class="text-center">Grads</div>
+                            <div class="text-center">Total</div>
+                          </div>
+                          <div class="divide-y divide-border">
+                            <div v-for="skill in allocatedSkills" :key="skill.name"
+                              class="grid grid-cols-[1fr_50px_60px_110px_60px] px-3 py-2 items-center text-sm hover:bg-muted/20"
+                              :class="classSkillsSet.has(skill.name) ? 'bg-primary/5' : ''">
+                              <div class="flex items-center gap-1.5">
+                                <div class="w-1.5 h-1.5 rounded-full shrink-0"
+                                  :class="classSkillsSet.has(skill.name) ? 'bg-primary' : 'bg-border'"></div>
+                                <span class="truncate font-medium text-xs">{{ skill.name }}</span>
+                              </div>
+                              <div class="text-center text-[10px] text-muted-foreground uppercase font-mono">{{
+                                skill.ability }}
+                              </div>
+                              <div class="text-center text-muted-foreground text-sm">{{
+                                modStr(skillAbilityMod(skill.ability)) }}
+                              </div>
+
+                              <!-- +/- buttons: class skill ±1, cross-class ±0.5 -->
+                              <div class="flex items-center justify-center gap-1">
+                                <button @click="adjustRank(skill.name, -1)"
+                                  class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                                  <Minus class="w-3 h-3" />
+                                </button>
+                                <span class="w-10 text-center text-sm font-bold text-foreground tabular-nums">
+                                  {{ editedData?.skills?.[skill.name] ?? 0 }}
+                                </span>
+                                <button @click="adjustRank(skill.name, 1)"
+                                  class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                                  <Plus class="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <div class="text-center font-bold text-primary text-sm">{{ modStrF(skillTotal(skill.name,
+                                skill.ability)) }}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <!-- Skill point budget bar -->
+                        <div
+                          class="flex items-center justify-between gap-4 px-1 py-2 bg-muted/30 rounded-lg border border-border">
+                          <div class="flex items-center gap-2 flex-1">
+                            <span
+                              class="text-[11px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">Pontos</span>
+                            <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div class="h-full rounded-full transition-all duration-300"
+                                :style="{ width: Math.min(100, skillPointsSpent / skillPointsAvailable * 100) + '%' }"
+                                :class="skillPointsSpent > skillPointsAvailable ? 'bg-red-500' : skillPointsSpent === skillPointsAvailable ? 'bg-green-500' : 'bg-primary'" />
+                            </div>
+                            <span class="text-xs font-bold tabular-nums shrink-0"
+                              :class="skillPointsSpent > skillPointsAvailable ? 'text-red-400' : 'text-foreground'">
+                              {{ skillPointsSpent }} / {{ skillPointsAvailable }}
+                            </span>
+                            <span v-if="skillPointsSpent > skillPointsAvailable"
+                              class="text-[10px] text-red-400 font-semibold">(+{{ skillPointsSpent -
+                                skillPointsAvailable }}
+                              extra)</span>
+                          </div>
+                        </div>
+                        <div class="flex items-center justify-between text-xs text-muted-foreground pt-1">
+                          <button @click="skillPhase = 'select'" class="underline hover:text-foreground">← Alterar
+                            seleção</button>
+                          <span>● Classe (±1) &nbsp; ○ Multiclasse (±0.5)</span>
                         </div>
                       </div>
                     </div>
 
-                    <div v-if="sc.modifiers?.length" class="flex flex-wrap gap-1 pt-1">
-                      <span v-for="(mod, mi) in sc.modifiers" :key="mi"
-                        class="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] text-zinc-400 uppercase">
-                        {{ mod.target }}: {{ modStr(mod.value) }}
-                      </span>
+                    <!-- VIEW MODE -->
+                    <div v-else>
+                      <div v-if="activeSkills.length === 0" class="text-center py-8 text-muted-foreground italic">
+                        Nenhuma
+                        perícia
+                        com graduações.</div>
+                      <div v-else class="divide-y divide-border">
+                        <div v-for="s in activeSkills" :key="s.name"
+                          class="flex items-center justify-between py-2.5 px-1 hover:bg-muted/20 rounded transition-colors">
+                          <div>
+                            <span class="text-sm font-medium">{{ s.name }}</span>
+                            <span class="text-xs text-muted-foreground ml-2 uppercase">{{ s.ability }}</span>
+                          </div>
+                          <span class="bg-primary/10 text-primary font-bold text-sm px-3 py-0.5 rounded-full">
+                            {{ modStr(s.ranks + calcMod(attrTotal(s.ability))) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="feats" class="mt-4">
+                <Card>
+                  <CardHeader class="pb-3">
+                    <div class="flex flex-col gap-3">
+                      <div class="flex items-center justify-between">
+                        <CardTitle class="text-base">Talentos
+                          <span class="text-xs font-normal text-muted-foreground ml-1">({{ filteredFeats.length }} de {{
+                            d.feats?.length || 0 }})</span>
+                        </CardTitle>
+                        <Button v-if="editMode" @click="openEditor('feat')" size="sm" class="gap-1">
+                          <Plus class="w-4 h-4" /> Novo Talento
+                        </Button>
+                      </div>
+                      <!-- Filter bar -->
+                      <div class="flex gap-2">
+                        <div class="relative flex-1">
+                          <Search
+                            class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                          <Input v-model="featSearch" placeholder="Pesquisar talentos..." class="pl-8 h-8 text-xs" />
+                        </div>
+                        <div class="flex gap-1">
+                          <button
+                            v-for="f in [{ v: 'all', label: 'Todos' }, { v: 'attack', label: 'Ataque' }, { v: 'passive', label: 'Passivo' }]"
+                            :key="f.v" class="px-2.5 py-1 rounded text-xs font-bold border transition-colors"
+                            :class="featTypeFilter === f.v ? 'bg-primary/20 border-primary text-primary' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
+                            @click="featTypeFilter = (f.v as any)">{{ f.label }}</button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent class="space-y-2">
+                    <div v-if="!d.feats?.length" class="text-center py-8 text-muted-foreground italic">Nenhum talento.
+                    </div>
+                    <div v-else-if="filteredFeats.length === 0" class="text-center py-8 text-muted-foreground italic">
+                      Nenhum
+                      talento encontrado.</div>
+                    <ul v-else class="space-y-2">
+                      <li v-for="({ feat, i }) in filteredFeats" :key="i"
+                        class="flex items-start gap-3 p-3 bg-muted/20 rounded-lg border border-border group relative transition-all hover:border-sidebar-accent"
+                        :class="typeof feat !== 'string' && feat.isAttack ? 'border-red-900/30 bg-red-950/10' : ''">
+                        <Zap class="w-4 h-4 shrink-0 mt-1"
+                          :class="typeof feat !== 'string' && feat.isAttack ? 'text-red-400' : 'text-primary'" />
+                        <div class="flex-1 space-y-1 cursor-pointer"
+                          @click="editMode ? openEditor('feat', feat, i as number) : null">
+                          <div class="text-sm font-semibold leading-none flex items-center gap-2">
+                            {{ typeof feat === 'string' ? resolveFormula(feat) : feat.title }}
+                            <Pencil v-if="editMode" class="w-3 h-3 opacity-0 group-hover:opacity-50" />
+                          </div>
+                          <div v-if="typeof feat !== 'string' && feat.description"
+                            class="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                            {{ resolveFormula(feat.description) }}
+                          </div>
+                          <div v-if="typeof feat !== 'string' && feat.rollFormula" class="mt-1">
+                            <code
+                              class="text-[10px] bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded text-muted-foreground font-mono">
+                        🎲 {{ resolveFormula(feat.rollFormula) }}
+                      </code>
+                          </div>
+                          <div v-if="typeof feat !== 'string' && feat.modifiers?.length"
+                            class="flex flex-wrap gap-1 mt-1">
+                            <span v-for="(mod, mi) in feat.modifiers" :key="mi"
+                              class="px-1.5 py-0.5 rounded bg-primary/10 text-[10px] font-bold text-primary uppercase">
+                              {{ mod.target }}: {{ modStr(mod.value) }}
+                            </span>
+                          </div>
+                        </div>
+                        <button v-if="editMode" @click.stop="removeFeat(i as number)"
+                          class="opacity-0 group-hover:opacity-100 text-destructive hover:text-red-400 transition-opacity mt-1">
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </li>
+                    </ul>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <!-- ── MAGIAS ── -->
+              <TabsContent value="spells" class="mt-4">
+                <Card>
+                  <CardHeader class="pb-3">
+                    <div class="flex flex-col gap-3">
+                      <div class="flex items-center justify-between">
+                        <CardTitle class="text-base flex items-center gap-2">
+                          <BookOpen class="w-4 h-4 text-primary" /> Magias
+                          <span class="text-xs font-normal text-muted-foreground">({{ filteredSpells.length }} de {{
+                            d.spells?.length || 0 }})</span>
+                        </CardTitle>
+                        <Button v-if="editMode" @click="openEditor('spell')" size="sm" class="gap-1">
+                          <Plus class="w-4 h-4" /> Nova Magia
+                        </Button>
+                      </div>
+
+                      <!-- Spell Slots Widget -->
+                      <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                        <div class="flex items-center justify-between mb-2">
+                          <p class="text-xs font-bold text-muted-foreground uppercase tracking-wide">Slots de Magia</p>
+                          <span class="text-[10px] text-muted-foreground">Usado / Máximo</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <div v-for="lvl in SPELL_LEVELS.filter(l => (spellSlotsMax[l] ?? 0) > 0 || editMode)"
+                            :key="lvl"
+                            class="flex flex-col items-center gap-0.5 p-1.5 rounded bg-zinc-900 border border-zinc-800 min-w-[44px]">
+                            <span class="text-[9px] font-bold text-muted-foreground uppercase">{{ lvl === 0 ? 'Truq' :
+                              `Nív
+                              ${lvl}` }}</span>
+                            <div class="flex items-center gap-0.5">
+                              <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, 1)"
+                                class="w-5 h-5 rounded text-[10px] font-bold bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 transition-colors">
+                                +
+                              </button>
+                              <span class="text-sm font-bold tabular-nums min-w-[24px] text-center"
+                                :class="((spellSlotsUsed as any)[lvl] ?? 0) >= ((spellSlotsMax as any)[lvl] ?? 0) ? 'text-red-400' : 'text-foreground'">
+                                {{ (spellSlotsUsed as any)[lvl] ?? 0 }}/{{ (spellSlotsMax as any)[lvl] ?? 0 }}
+                              </span>
+                              <button v-if="(spellSlotsMax as any)[lvl] > 0" @click="adjustSlotUsed(lvl, -1)"
+                                class="w-5 h-5 rounded text-[10px] font-bold bg-muted text-muted-foreground hover:bg-muted/60 border border-border transition-colors">
+                                −
+                              </button>
+                            </div>
+                            <!-- Adjust max in edit mode -->
+                            <div v-if="editMode" class="flex items-center gap-0.5 mt-0.5">
+                              <button @click="adjustSlotMax(lvl, -1)"
+                                class="w-4 h-4 rounded text-[9px] bg-muted text-muted-foreground hover:bg-muted/60 border border-border">−</button>
+                              <span class="text-[9px] text-muted-foreground px-0.5">máx</span>
+                              <button @click="adjustSlotMax(lvl, 1)"
+                                class="w-4 h-4 rounded text-[9px] bg-muted text-muted-foreground hover:bg-muted/60 border border-border">+</button>
+                            </div>
+                          </div>
+                          <div v-if="SPELL_LEVELS.filter(l => (spellSlotsMax as any)[l] > 0).length === 0 && !editMode"
+                            class="text-xs text-muted-foreground italic py-1">
+                            Ative o modo edição para configurar slots.
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Search + Filter bar -->
+                      <div class="flex gap-2">
+                        <div class="relative flex-1">
+                          <Search
+                            class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                          <Input v-model="spellSearch" placeholder="Pesquisar magias..." class="pl-8 h-8 text-xs" />
+                        </div>
+                        <div class="flex gap-1 flex-wrap">
+                          <button class="px-2.5 py-1 rounded text-xs font-bold border transition-colors"
+                            :class="spellLevelFilter === null ? 'bg-primary/20 border-primary text-primary' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
+                            @click="spellLevelFilter = null">
+                            Todos
+                          </button>
+                          <button v-for="lvl in SPELL_LEVELS" :key="lvl"
+                            class="px-2 py-1 rounded text-xs font-bold border transition-colors"
+                            :class="spellLevelFilter === lvl ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'border-zinc-800 text-muted-foreground hover:border-zinc-700'"
+                            @click="spellLevelFilter = spellLevelFilter === lvl ? null : lvl">
+                            {{ lvl === 0 ? 'Truq' : `N${lvl}` }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent>
+                    <div v-if="!d.spells?.length" class="text-center py-8 text-muted-foreground italic">Nenhuma magia
+                      registrada.
+                    </div>
+                    <div v-else-if="filteredSpells.length === 0" class="text-center py-8 text-muted-foreground italic">
+                      Nenhuma
+                      magia encontrada.</div>
+                    <div v-else class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      <div v-for="({ spell, i }) in filteredSpells" :key="i"
+                        class="relative rounded-lg border p-3 group transition-all duration-200" :class="[
+                          typeof spell !== 'string' && spell.isAttack
+                            ? 'bg-red-950/10 border-red-900/30 hover:border-red-700/50'
+                            : 'bg-muted/20 border-border hover:border-sidebar-accent',
+                          dragOverIndex === i ? 'ring-2 ring-primary ring-offset-1 ring-offset-background scale-[0.98]' : '',
+                          editMode ? 'cursor-grab active:cursor-grabbing' : ''
+                        ]" :draggable="editMode" @dragstart="spellDragStart($event, i)"
+                        @dragover="spellDragOver($event, i)" @drop="spellDrop($event, i)" @dragend="spellDragEnd"
+                        @click="editMode ? openEditor('spell', spell, i) : null">
+                        <!-- Level badge -->
+                        <div class="absolute top-2 right-2 flex items-center gap-1">
+                          <span v-if="typeof spell !== 'string' && spell.spellLevel >= 0"
+                            class="text-[10px] font-bold tabular-nums rounded px-1.5 py-0.5 bg-muted border border-border text-muted-foreground">{{
+                              spell.spellLevel === 0 ? 'Truq.' : `N${spell.spellLevel}` }}</span>
+                          <span v-if="typeof spell !== 'string' && spell.isAttack"
+                            class="text-[9px] font-bold rounded px-1 py-0.5 bg-red-950 border border-red-900 text-red-400">ATK</span>
+                        </div>
+
+                        <!-- Icon + Title -->
+                        <div class="flex items-start gap-2 pr-10 mb-1">
+                          <BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5"
+                            :class="typeof spell !== 'string' && spell.isAttack ? 'text-red-400' : 'text-primary'" />
+                          <p class="text-sm font-semibold leading-tight">
+                            {{ typeof spell === 'string' ? resolveFormula(spell) : spell.title }}
+                          </p>
+                        </div>
+
+                        <!-- Description -->
+                        <p v-if="typeof spell !== 'string' && spell.description"
+                          class="text-xs text-muted-foreground line-clamp-2 mb-1.5 pl-5">
+                          {{ resolveFormula(spell.description) }}
+                        </p>
+
+                        <!-- Roll Formula -->
+                        <code v-if="typeof spell !== 'string' && spell.rollFormula"
+                          class="text-[10px] bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded text-muted-foreground font-mono block w-full text-center mt-1">
+                    🎲 {{ resolveFormula(spell.rollFormula) }}
+                  </code>
+
+                        <!-- Modifiers -->
+                        <div v-if="typeof spell !== 'string' && spell.modifiers?.length"
+                          class="flex flex-wrap gap-1 mt-1.5 pl-5">
+                          <span v-for="(mod, mi) in spell.modifiers" :key="mi"
+                            class="px-1.5 py-0.5 rounded bg-primary/10 text-[10px] font-bold text-primary uppercase">
+                            {{ mod.target }}: {{ modStr(mod.value) }}
+                          </span>
+                        </div>
+
+                        <!-- Edit Mode Overlay -->
+                        <div v-if="editMode"
+                          class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity rounded-lg z-10">
+                          <Button size="icon" variant="outline" class="h-7 w-7"
+                            @click.stop="openEditor('spell', spell, i)">
+                            <Pencil class="w-3 h-3" />
+                          </Button>
+                          <Button size="icon" variant="destructive" class="h-7 w-7" @click.stop="removeSpell(i)">
+                            <Trash2 class="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              </div>
-            </div>
-          </TabsContent>
+              </TabsContent>
 
-          <!-- ── ITENS ── -->
-          <TabsContent value="items" class="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle class="text-base flex items-center gap-2">
-                  <Package class="w-4 h-4 text-primary" />Equipamento
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <div v-if="editMode" class="flex gap-2">
-                  <Input v-model="newItem" placeholder="Nome do item..." @keyup.enter="addItem" class="flex-1" />
-                  <Button @click="addItem" size="sm" class="gap-1">
-                    <Plus class="w-4 h-4" /> Adicionar
-                  </Button>
-                </div>
-                <div v-if="!d.equipment?.length" class="text-center py-8 text-muted-foreground italic">Nenhum item no
-                  inventário.</div>
-                <ul v-else class="space-y-2">
-                  <li v-for="(item, i) in d.equipment" :key="i"
-                    class="flex items-center gap-3 p-3 bg-amber-950/20 rounded-lg border border-amber-900/30 group">
-                    <Package class="w-4 h-4 text-amber-400 shrink-0" />
-                    <span class="text-sm font-medium flex-1">{{ resolveFormula(item) }}</span>
-                    <button v-if="editMode" @click="removeItem(i as number)"
-                      class="opacity-0 group-hover:opacity-100 text-destructive hover:text-red-400 transition-opacity">
-                      <Trash2 class="w-4 h-4" />
-                    </button>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <!-- ── CONFIGURAÇÕES ── -->
-          <TabsContent value="config" class="mt-4 space-y-4">
-            <div class="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm text-muted-foreground">
-              <span class="text-primary font-semibold">Modificadores</span> — Bônus extras (equipamentos, magia, raça)
-              somados
-              automaticamente aos valores base.
-            </div>
-
-            <div class="grid md:grid-cols-3 gap-4">
-
-              <!-- ① Bônus Atributos -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Bônus de Atributos
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-0 divide-y divide-border/40">
-                  <div v-for="key in ATTR_KEYS" :key="key" class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">{{ ATTR_LABELS[key] }}</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses.attributes, key, -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.attributes[key]
-                        ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData.bonuses.attributes, key, 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
+              <!-- ── ITENS ── -->
+              <TabsContent value="items" class="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle class="text-base flex items-center gap-2">
+                      <Package class="w-4 h-4 text-primary" />Equipamento
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent class="space-y-3">
+                    <div v-if="editMode" class="flex gap-2">
+                      <Input v-model="newItem" placeholder="Nome do item..." @keyup.enter="addItem" class="flex-1" />
+                      <Button @click="addItem" size="sm" class="gap-1">
+                        <Plus class="w-4 h-4" /> Adicionar
+                      </Button>
                     </div>
-                    <span v-else class="text-sm font-bold">{{ modStr(b.attributes?.[key] ?? 0) }}</span>
-                  </div>
-                </CardContent>
-              </Card>
+                    <div v-if="!d.equipment?.length" class="text-center py-8 text-muted-foreground italic">Nenhum item
+                      no
+                      inventário.</div>
+                    <ul v-else class="space-y-2">
+                      <li v-for="(item, i) in d.equipment" :key="i"
+                        class="flex items-center gap-3 p-3 bg-amber-950/20 rounded-lg border border-amber-900/30 group">
+                        <Package class="w-4 h-4 text-amber-400 shrink-0" />
+                        <span class="text-sm font-medium flex-1">{{ resolveFormula(item) }}</span>
+                        <button v-if="editMode" @click="removeItem(i as number)"
+                          class="opacity-0 group-hover:opacity-100 text-destructive hover:text-red-400 transition-opacity">
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </li>
+                    </ul>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-              <!-- ② Movimento & Iniciativa -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Movimento &amp; Iniciativa
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-0 divide-y divide-border/40">
-                  <div class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">Desl. base (m)</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData, 'speed', -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.speed ?? 9 }}</span>
-                      <button @click="adjustField(editedData, 'speed', 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ d.speed ?? 9 }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">Bônus Desl.</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses, 'speed', -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.speed ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData.bonuses, 'speed', 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ modStr(b.speed ?? 0) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">Inic. misc</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData, 'initiative_misc', -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.initiative_misc ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData, 'initiative_misc', 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ d.initiative_misc ?? 0 }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">Bônus Inic.</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses, 'initiative', -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.initiative ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData.bonuses, 'initiative', 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ modStr(b.initiative ?? 0) }}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <!-- ③ Componentes CA -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Componentes de CA
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-0 divide-y divide-border/40">
-                  <div v-for="f in CA_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">{{ f.label }}</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData, f.field, -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData[f.field] ?? 0 }}</span>
-                      <button @click="adjustField(editedData, f.field, 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ d[f.field] ?? 0 }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">Bônus CA (misc)</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses, 'ca', -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.ca ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData.bonuses, 'ca', 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ modStr(b.ca ?? 0) }}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <!-- ④ Testes de Resistência -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Testes de Resistência
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-0 divide-y divide-border/40">
-                  <div v-for="f in SAVE_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">{{ f.label }}</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData, f.field, -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData[f.field] ?? 0 }}</span>
-                      <button @click="adjustField(editedData, f.field, 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ d[f.field] ?? 0 }}</span>
-                  </div>
-                  <div v-for="f in SAVE_BONUS_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">{{ f.label }}</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses.saves, f.field, -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.saves[f.field]
-                        ?? 0
-                      }}</span>
-                      <button @click="adjustField(editedData.bonuses.saves, f.field, 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ modStr(b.saves?.[f.field] ?? 0) }}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <!-- ⑤ Resistências Elementais -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Resistências Elementais
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-0 divide-y divide-border/40">
-                  <div v-for="f in ELEM_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
-                    <span class="text-xs text-muted-foreground">{{ f.label }}</span>
-                    <div v-if="editMode" class="flex items-center gap-1">
-                      <button @click="adjustField(editedData.bonuses.resistances, f.field, -1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
-                        <Minus class="w-3 h-3" />
-                      </button>
-                      <span class="w-8 text-center text-sm font-bold tabular-nums">{{
-                        editedData.bonuses.resistances[f.field]
-                        ?? 0 }}</span>
-                      <button @click="adjustField(editedData.bonuses.resistances, f.field, 1)"
-                        class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                        <Plus class="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span v-else class="text-sm font-bold">{{ b.resistances?.[f.field] ?? 0 }}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <!-- ⑥ Notas -->
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Notas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea v-if="editMode" v-model="editedData.bonuses.notes" class="min-h-[8rem] text-sm"
-                    placeholder="Ex: +2 FOR (Cinto), +4 CA (Manto +2)..." />
-                  <p v-else class="text-sm text-muted-foreground whitespace-pre-wrap italic">{{ b.notes ||
-                    'Nenhuma nota.' }}
-                  </p>
-                </CardContent>
-              </Card>
-
-            </div>
-
-          </TabsContent>
-
-          <!-- ── RECURSOS DE CLASSE ── -->
-          <TabsContent value="resources" class="mt-4">
-            <Card>
-              <CardHeader class="flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle class="text-base">Recursos de Classe</CardTitle>
-                  <p class="text-xs text-muted-foreground mt-0.5">Fúria, Música Bárdica, Imposição de Mãos...</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span v-if="savingRes" class="text-[10px] text-muted-foreground animate-pulse">Salvando...</span>
-                  <Button v-if="sheet?.data.resources?.length" variant="outline" size="sm" @click="resetResources"
-                    class="gap-1 text-xs h-7">
-                    <RefreshCw class="w-3 h-3" /> Restaurar
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent class="space-y-4">
-
-                <!-- Add form (edit mode) -->
-                <div v-if="editMode" class="flex gap-2 items-end p-3 rounded-lg bg-muted/30 border border-border">
-                  <div class="flex-1 space-y-1">
-                    <Label class="text-xs">Nome do recurso</Label>
-                    <Input v-model="newResName" placeholder="Ex: Fúria, Música Bárdica..." class="h-8" />
-                  </div>
-                  <div class="w-20 space-y-1">
-                    <Label class="text-xs">Máximo/dia</Label>
-                    <Input v-model.number="newResMax" type="number" min="1" max="99" class="h-8 text-center" />
-                  </div>
-                  <Button size="sm" @click="addResource" :disabled="!newResName.trim()" class="h-8 shrink-0">
-                    <Plus class="w-3 h-3 mr-1" /> Adicionar
-                  </Button>
+              <!-- ── CONFIGURAÇÕES ── -->
+              <TabsContent value="config" class="mt-4 space-y-4">
+                <div class="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm text-muted-foreground">
+                  <span class="text-primary font-semibold">Modificadores</span> — Bônus extras (equipamentos, magia,
+                  raça)
+                  somados
+                  automaticamente aos valores base.
                 </div>
 
-                <!-- Empty state -->
-                <div v-if="!sheet?.data.resources?.length"
-                  class="text-center py-10 text-muted-foreground/40 border-2 border-dashed border-zinc-800 rounded-xl">
-                  <Flame class="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p class="text-sm">Nenhum recurso cadastrado.</p>
-                  <p v-if="!editMode" class="text-xs mt-1 opacity-70">Ative o modo edição para adicionar.</p>
-                </div>
+                <div class="grid md:grid-cols-3 gap-4">
 
-                <!-- Resource cards -->
-                <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div v-for="(res, i) in sheet.data.resources" :key="i"
-                    class="relative rounded-xl border border-border bg-zinc-900/60 p-4 space-y-3 hover:border-zinc-700 transition-colors">
-
-                    <!-- Header row -->
-                    <div class="flex items-start justify-between gap-2">
-                      <div>
-                        <p class="font-bold text-sm text-foreground">{{ res.name }}</p>
-                        <p class="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">por dia</p>
+                  <!-- ① Bônus Atributos -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Bônus de Atributos
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-0 divide-y divide-border/40">
+                      <div v-for="key in ATTR_KEYS" :key="key" class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">{{ ATTR_LABELS[key] }}</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses.attributes, key, -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{
+                            editedData.bonuses.attributes[key]
+                            ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData.bonuses.attributes, key, 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ modStr(b.attributes?.[key] ?? 0) }}</span>
                       </div>
-                      <button v-if="editMode" @click="removeResource(i as number)"
-                        class="text-muted-foreground hover:text-destructive p-1 rounded-md hover:bg-destructive/10 transition-colors shrink-0">
-                        <X class="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    </CardContent>
+                  </Card>
 
-                    <!-- Dot pips (≤ 12) or numeric (> 12) -->
-                    <div v-if="res.max <= 12" class="flex flex-wrap gap-1.5">
-                      <div v-for="j in res.max" :key="j"
-                        class="w-5 h-5 rounded-full border-2 transition-all duration-150 cursor-pointer" :class="j <= (res.current ?? res.max)
-                          ? 'bg-primary border-primary shadow-[0_0_6px_rgba(var(--primary),0.5)]'
-                          : 'bg-transparent border-zinc-700 opacity-40'"
-                        @click="adjustResource(i as number, j <= (res.current ?? res.max) ? -1 : 1)">
+                  <!-- ② Movimento & Iniciativa -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Movimento &amp;
+                        Iniciativa
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-0 divide-y divide-border/40">
+                      <div class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">Desl. base (m)</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData, 'speed', -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.speed ?? 9
+                          }}</span>
+                          <button @click="adjustField(editedData, 'speed', 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ d.speed ?? 9 }}</span>
                       </div>
-                    </div>
-                    <div v-else class="text-center">
-                      <span class="text-3xl font-extrabold font-serif tabular-nums"
-                        :class="(res.current ?? res.max) === 0 ? 'text-red-400' : 'text-primary'">
-                        {{ res.current ?? res.max }}
-                      </span>
-                      <span class="text-lg text-muted-foreground">/{{ res.max }}</span>
-                    </div>
+                      <div class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">Bônus Desl.</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses, 'speed', -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.speed ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData.bonuses, 'speed', 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ modStr(b.speed ?? 0) }}</span>
+                      </div>
+                      <div class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">Inic. misc</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData, 'initiative_misc', -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.initiative_misc ??
+                            0
+                          }}</span>
+                          <button @click="adjustField(editedData, 'initiative_misc', 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ d.initiative_misc ?? 0 }}</span>
+                      </div>
+                      <div class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">Bônus Inic.</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses, 'initiative', -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.initiative
+                            ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData.bonuses, 'initiative', 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ modStr(b.initiative ?? 0) }}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                    <!-- +/- controls -->
-                    <div class="flex items-center justify-between pt-1 border-t border-border/40">
-                      <button @click="adjustResource(i as number, -1)" :disabled="(res.current ?? res.max) <= 0"
-                        class="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold bg-muted hover:bg-red-950/40 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                        <Minus class="w-3 h-3" /> Usar
-                      </button>
-                      <span class="text-xs text-muted-foreground tabular-nums font-mono">
-                        {{ res.current ?? res.max }}&nbsp;/&nbsp;{{ res.max }}
-                      </span>
-                      <button @click="adjustResource(i as number, 1)" :disabled="(res.current ?? res.max) >= res.max"
-                        class="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-bold bg-muted hover:bg-primary/20 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                        <Plus class="w-3 h-3" /> Recuperar
-                      </button>
-                    </div>
+                  <!-- ③ Componentes CA -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Componentes de CA
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-0 divide-y divide-border/40">
+                      <div v-for="f in CA_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">{{ f.label }}</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData, f.field, -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData[f.field] ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData, f.field, 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ d[f.field] ?? 0 }}</span>
+                      </div>
+                      <div class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">Bônus CA (misc)</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses, 'ca', -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData.bonuses.ca ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData.bonuses, 'ca', 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ modStr(b.ca ?? 0) }}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                  </div>
+                  <!-- ④ Testes de Resistência -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Testes de Resistência
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-0 divide-y divide-border/40">
+                      <div v-for="f in SAVE_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">{{ f.label }}</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData, f.field, -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{ editedData[f.field] ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData, f.field, 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ d[f.field] ?? 0 }}</span>
+                      </div>
+                      <div v-for="f in SAVE_BONUS_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">{{ f.label }}</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses.saves, f.field, -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{
+                            editedData.bonuses.saves[f.field]
+                            ?? 0
+                          }}</span>
+                          <button @click="adjustField(editedData.bonuses.saves, f.field, 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ modStr(b.saves?.[f.field] ?? 0) }}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <!-- ⑤ Resistências Elementais -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Resistências Elementais
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-0 divide-y divide-border/40">
+                      <div v-for="f in ELEM_FIELDS" :key="f.field" class="flex items-center justify-between py-2">
+                        <span class="text-xs text-muted-foreground">{{ f.label }}</span>
+                        <div v-if="editMode" class="flex items-center gap-1">
+                          <button @click="adjustField(editedData.bonuses.resistances, f.field, -1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Minus class="w-3 h-3" />
+                          </button>
+                          <span class="w-8 text-center text-sm font-bold tabular-nums">{{
+                            editedData.bonuses.resistances[f.field]
+                            ?? 0 }}</span>
+                          <button @click="adjustField(editedData.bonuses.resistances, f.field, 1)"
+                            class="w-6 h-6 rounded bg-muted hover:bg-primary/20 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                            <Plus class="w-3 h-3" />
+                          </button>
+                        </div>
+                        <span v-else class="text-sm font-bold">{{ b.resistances?.[f.field] ?? 0 }}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <!-- ⑥ Notas -->
+                  <Card>
+                    <CardHeader class="pb-2">
+                      <CardTitle class="text-sm text-muted-foreground uppercase tracking-wider">Notas</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Textarea v-if="editMode" v-model="editedData.bonuses.notes" class="min-h-[8rem] text-sm"
+                        placeholder="Ex: +2 FOR (Cinto), +4 CA (Manto +2)..." />
+                      <p v-else class="text-sm text-muted-foreground whitespace-pre-wrap italic">{{ b.notes ||
+                        'Nenhuma nota.' }}
+                      </p>
+                    </CardContent>
+                  </Card>
+
                 </div>
 
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </TabsContent>
 
-        </Tabs>
+            </Tabs>
+          </div>
+          <!-- END RIGHT MAIN -->
+
+        </div>
+        <!-- END TWO-COLUMN LAYOUT -->
+
 
       </div>
     </div>

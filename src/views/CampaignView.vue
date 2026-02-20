@@ -59,7 +59,7 @@ async function fetchCampaign() {
         const me = memberData.find((m: any) => m.user_id === authStore.user?.id)
         if (me) {
             myMemberId.value = me.id
-            selectedSheetId.value = me.sheet_id ?? ''
+            selectedSheetId.value = me.sheet_id ?? 'none'
         }
     }
 
@@ -79,15 +79,16 @@ async function saveActiveSheet() {
     savingSheet.value = true
     sheetSaved.value = false
 
+    const sheetIdToSave = selectedSheetId.value === 'none' ? null : selectedSheetId.value
     const { error } = await supabase
         .from('campaign_members')
-        .update({ sheet_id: selectedSheetId.value || null })
+        .update({ sheet_id: sheetIdToSave })
         .eq('id', myMemberId.value)
 
     if (!error) {
         // Update local state
         const me = members.value.find(m => m.user_id === authStore.user?.id)
-        if (me) me.sheet_id = selectedSheetId.value || null
+        if (me) me.sheet_id = sheetIdToSave
 
         sheetSaved.value = true
         setTimeout(() => { sheetSaved.value = false }, 2000)
@@ -211,8 +212,8 @@ onMounted(async () => {
 
                     <!-- Right Column -->
                     <div class="flex flex-col gap-4">
-                        <!-- Active Sheet Selector (players only) -->
-                        <Card v-if="!isDM" class="bg-zinc-900/40 border-zinc-800">
+                        <!-- Active Sheet Selector -->
+                        <Card class="bg-zinc-900/40 border-zinc-800">
                             <CardHeader class="pb-2">
                                 <CardTitle class="text-base flex items-center gap-2">
                                     <BookOpen class="w-4 h-4 text-primary" /> Minha Ficha Ativa
@@ -225,7 +226,7 @@ onMounted(async () => {
                                         <SelectValue placeholder="Nenhuma ficha selecionada" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">Nenhuma</SelectItem>
+                                        <SelectItem value="none">Nenhuma</SelectItem>
                                         <SelectItem v-for="s in mySheets" :key="s.id" :value="s.id">
                                             {{ s.name }} — {{ s.class }} Nvl {{ s.level }}
                                         </SelectItem>
@@ -233,7 +234,7 @@ onMounted(async () => {
                                 </Select>
 
                                 <Button class="w-full h-8 text-xs gap-1.5"
-                                    :disabled="savingSheet || selectedSheetId === (myCurrentSheetId ?? '')"
+                                    :disabled="savingSheet || selectedSheetId === (myCurrentSheetId ?? 'none')"
                                     @click="saveActiveSheet">
                                     <Check v-if="sheetSaved" class="w-3 h-3" />
                                     {{ sheetSaved ? 'Salvo!' : savingSheet ? 'Salvando...' : 'Usar esta ficha' }}
