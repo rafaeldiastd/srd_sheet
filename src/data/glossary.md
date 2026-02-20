@@ -1,0 +1,113 @@
+# D&D 3.5e Translation Glossary (PT-BR)
+
+## Attributes (Atributos)
+- Strength: Força
+- Dexterity: Destreza
+- Constitution: Constituição
+- Intelligence: Inteligência
+- Wisdom: Sabedoria
+- Charisma: Carisma
+
+## Classes (Classes)
+- Barbarian: Bárbaro
+- Bard: Bardo
+- Cleric: Clérigo
+- Druid: Druida
+- Fighter: Guerreiro
+- Monk: Monge
+- Paladin: Paladino
+- Ranger: Ranger
+- Rogue: Ladino
+- Sorcerer: Feiticeiro
+- Wizard: Mago
+
+## Races (Raças)
+- Human: Humano
+- Dwarf: Anão
+- Elf: Elfo
+- Gnome: Gnomo
+- Half-Elf: Meio-Elfo
+- Half-Orc: Meio-Orc
+- Halfling: Halfling
+
+## Skills (Perícias)
+- Appraise: Avaliação
+- Balance: Equilíbrio
+- Bluff: Blefar
+- Climb: Escalar
+- Concentration: Concentração
+- Craft: Ofícios
+- Decipher Script: Decifrar Escrita
+- Diplomacy: Diplomacia
+- Disable Device: Operar Mecanismo
+- Disguise: Disfarces
+- Escape Artist: Arte da Fuga
+- Forgery: Falsificação
+- Gather Information: Obter Informação
+- Handle Animal: Adestrar Animais
+- Heal: Cura
+- Hide: Esconder-se
+- Intimidate: Intimidação
+- Jump: Saltar
+- Knowledge (Arcana): Conhecimento (Arcano)
+- Knowledge (Religion): Conhecimento (Religião)
+- Knowledge (Nature): Conhecimento (Natureza)
+- Listen: Ouvir
+- Move Silently: Furtividade
+- Open Lock: Abrir Fechaduras
+- Perform: Atuação
+- Profession: Profissão
+- Ride: Cavalgar
+- Search: Procurar
+- Sense Motive: Sentir Motivação
+- Sleight of Hand: Prestidigitação
+- Spellcraft: Identificar Magia
+- Spot: Observar
+- Survival: Sobrevivência
+- Swim: Natação
+- Tumble: Acrobacia
+- Use Magic Device: Usar Instrumento Mágico
+- Use Rope: Usar Cordas
+
+## Feats (Talentos)
+- Acrobatic: Acrobático
+- Agile: Ágil
+- Alertness: Prontidão
+- Animal Affinity: Afinidade com Animais
+- Armor Proficiency (Light): Usar Armadura (Leve)
+- Armor Proficiency (Medium): Usar Armadura (Média)
+- Armor Proficiency (Heavy): Usar Armadura (Pesada)
+- Athletic: Atlético
+- Blind-Fight: Lutar às Cegas
+- Combat Casting: Magia em Combate
+- Combat Expertise: Especialização em Combate
+- Combat Reflexes: Reflexos de Combate
+- Deceitful: Dissimulado
+- Deft Hands: Mãos Rápidas
+- Diligent: Diligente
+- Dodge: Esquiva
+- Endurance: Tolerância
+- Great Fortitude: Grande Fortitude
+- Improved Initiative: Iniciativa Aprimorada
+- Improved Unarmed Strike: Ataque Desarmado Aprimorado
+- Investigator: Investigador
+- Iron Will: Vontade de Ferro
+- Lightning Reflexes: Reflexos Rápidos
+- Magical Aptitude: Aptidão Mágica
+- Negotiator: Negociador
+- Nimble Fingers: Dedos Ágeis
+- Persuasive: Persuasivo
+- Point Blank Shot: Tiro Certeiro
+- Power Attack: Ataque Poderoso
+- Precise Shot: Tiro Preciso
+- Quick Draw: Saque Rápido
+- Rapid Reload: Recarga Rápida
+- Run: Correr
+- Self-Sufficient: Autossuficiente
+- Skill Focus: Foco em Perícia
+- Stealthy: Sorrateiro
+- Toughness: Vitalidade
+- Track: Rastrear
+- Two-Weapon Fighting: Combater com Duas Armas
+- Weapon Finesse: Acuidade com Arma
+- Weapon Focus: Foco em Arma
