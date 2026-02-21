@@ -66,13 +66,19 @@ const spells = computed(() =>
     )
 )
 
+const ATTR_LABELS: Record<string, string> = {
+    str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR'
+}
+
 import { useCampaignRolls } from '@/lib/useCampaignRolls'
 
-const { rolling, sendRoll, modStr } = useCampaignRolls(props.campaignId, memberName.value)
+const recipientId = ref('all')
+const { rolling, sendRoll, modStr } = useCampaignRolls(props.campaignId, memberName, recipientId)
 
 
 async function rollInitiative() {
-    await sendRoll('Iniciativa', `1d20`, initiative.value)
+    const formula = `1d20${modStr(initiative.value)}`
+    await sendRoll('Iniciativa', formula)
 }
 
 
@@ -81,7 +87,8 @@ async function rollSpell(spell: any) {
 }
 
 async function rollSkill(skill: { name: string; total: number }) {
-    await sendRoll(skill.name, '1d20', skill.total)
+    const formula = `1d20${modStr(skill.total)}`
+    await sendRoll(skill.name, formula)
 }
 
 onMounted(fetchMySheet)
@@ -148,13 +155,13 @@ onMounted(fetchMySheet)
                     <div class="space-y-1">
                         <p class="text-[10px] text-muted-foreground uppercase font-bold px-1">Atributos</p>
                         <div class="grid grid-cols-2 gap-1">
-                            <button v-for="attr in ['str', 'dex', 'con', 'int', 'wis', 'cha']" :key="attr"
+                            <button v-for="attr in (['str', 'dex', 'con', 'int', 'wis', 'cha'] as const)" :key="attr"
                                 class="p-2 rounded bg-zinc-900 border border-zinc-800 hover:border-primary/50 transition-colors text-center"
-                                :disabled="rolling" @click="sendRoll(attr.toUpperCase(), '1d20', attrMod(attr))">
-                                <p class="text-[9px] text-muted-foreground uppercase font-bold">{{ {
-                                    str: 'FOR',
-                                    dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR'
-                                }[attr] }}</p>
+                                :disabled="rolling"
+                                @click="sendRoll(ATTR_LABELS[attr] || attr.toUpperCase(), `1d20${modStr(attrMod(attr))}`)">
+                                <p class="text-[9px] text-muted-foreground uppercase font-bold">{{ ATTR_LABELS[attr] ||
+                                    attr.toUpperCase() }}
+                                </p>
                                 <p class="text-sm font-bold">{{ modStr(attrMod(attr)) }}</p>
                             </button>
                         </div>
@@ -174,7 +181,7 @@ onMounted(fetchMySheet)
                                     variant="outline"
                                     class="h-7 text-xs gap-1.5 border-green-900/50 text-green-400 hover:bg-green-950/30"
                                     :disabled="rolling"
-                                    @click="sendRoll(`${sc.title} — Acerto`, '1d20', parseInt(sc.attackBonus) || 0)">
+                                    @click="sendRoll(`${sc.title} — Acerto`, `1d20${modStr(parseInt(sc.attackBonus) || 0)}`)">
                                     <Sword class="w-3 h-3" /> 1d20{{ modStr(parseInt(sc.attackBonus) || 0) }}
                                 </Button>
                                 <Button v-if="sc.rollFormula" size="sm" variant="outline"
