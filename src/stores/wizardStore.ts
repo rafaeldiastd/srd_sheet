@@ -17,7 +17,7 @@ export interface CharacterAttributes {
 
 export const useWizardStore = defineStore('wizard', () => {
     const currentStep = ref(1)
-    const totalSteps = 6
+    const totalSteps = 3
 
     const character = ref({
         name: '',
@@ -34,6 +34,7 @@ export const useWizardStore = defineStore('wizard', () => {
             cha: { base: 10, temp: 0 },
         } as CharacterAttributes,
         skills: {} as Record<string, number>,
+        skillPoints: 0,
         feats: [] as string[],
         spells: [] as string[],
         equipment: [] as string[],

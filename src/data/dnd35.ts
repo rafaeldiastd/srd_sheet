@@ -72,6 +72,20 @@ export const CLASS_SKILL_POINTS: Record<string, number> = {
     'Mago': 2,
 }
 
+export const CLASS_HIT_DICE: Record<string, number> = {
+    'Bárbaro': 12,
+    'Bardo': 6,
+    'Clérigo': 8,
+    'Druida': 8,
+    'Guerreiro': 10,
+    'Monge': 8,
+    'Paladino': 10,
+    'Ranger': 8,
+    'Ladino': 6,
+    'Feiticeiro': 4,
+    'Mago': 4,
+}
+
 export interface Feat {
     name: string
     description: string

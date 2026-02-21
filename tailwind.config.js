@@ -69,5 +69,7 @@ export default {
             keyframes: {},
         },
     },
-    plugins: [],
+    plugins: [
+        require('tailwind-scrollbar'),
+    ],
 }

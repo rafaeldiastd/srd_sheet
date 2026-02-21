@@ -39,12 +39,29 @@ async function deleteSheet(id: string, name: string) {
 
 async function fetchCampaigns() {
   loadingCampaigns.value = true
-  const { data, error } = await supabase
-    .from('campaigns')
-    .select('*')
-    .order('created_at', { ascending: false })
 
-  if (!error) campaigns.value = data || []
+  if (!authStore.user) {
+    campaigns.value = []
+    loadingCampaigns.value = false
+    return
+  }
+
+  // Fetch campaigns via the junction table
+  const { data, error } = await supabase
+    .from('campaign_members')
+    .select('campaigns(*)')
+    .eq('user_id', authStore.user.id)
+
+  if (!error && data) {
+    // data is an array of objects like { campaigns: { id: '...', name: '...' } }
+    campaigns.value = data
+      .map((item: any) => item.campaigns)
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  } else {
+    campaigns.value = []
+  }
+
   loadingCampaigns.value = false
 }
 

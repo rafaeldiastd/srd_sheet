@@ -7,9 +7,6 @@ import { useRouter } from 'vue-router'
 import BasicInfoStep from '@/components/wizard/steps/BasicInfoStep.vue'
 import AttributesStep from '@/components/wizard/steps/AttributesStep.vue'
 import SkillsStep from '@/components/wizard/steps/SkillsStep.vue'
-import FeatsStep from '@/components/wizard/steps/FeatsStep.vue'
-import SpellsStep from '@/components/wizard/steps/SpellsStep.vue'
-import EquipmentBioStep from '@/components/wizard/steps/EquipmentBioStep.vue'
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-vue-next'
 
 const store = useWizardStore()
@@ -19,9 +16,6 @@ const steps = [
   { label: 'Informações', short: 'Info' },
   { label: 'Atributos', short: 'Attrs' },
   { label: 'Perícias', short: 'Perícias' },
-  { label: 'Talentos', short: 'Talentos' },
-  { label: 'Magias', short: 'Magias' },
-  { label: 'Equipamentos', short: 'Equip' },
 ]
 
 const currentStepLabel = computed(() => steps[store.currentStep - 1]?.label)
@@ -116,9 +110,6 @@ async function handleFinish() {
               <BasicInfoStep v-if="store.currentStep === 1" />
               <AttributesStep v-else-if="store.currentStep === 2" />
               <SkillsStep v-else-if="store.currentStep === 3" />
-              <FeatsStep v-else-if="store.currentStep === 4" />
-              <SpellsStep v-else-if="store.currentStep === 5" />
-              <EquipmentBioStep v-else-if="store.currentStep === 6" />
             </div>
           </Transition>
         </CardContent>

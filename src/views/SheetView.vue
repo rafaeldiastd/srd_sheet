@@ -12,13 +12,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ChevronLeft, Pencil, Save, X, Star, Zap,
   Heart, Wind, Settings, Shield, Sword, Plus, Trash2,
-  Search, BookOpen, Package, Minus, MessageSquare, Flame, RefreshCw
+  Search, BookOpen, Package, Minus, Flame, RefreshCw, Dices
 } from 'lucide-vue-next'
 import SheetChatOverlay from '@/components/campaign/SheetChatOverlay.vue'
-import { SKILLS_DATA, CLASS_SKILLS, CLASS_SKILL_POINTS } from '@/data/dnd35'
+import { SKILLS_DATA, CLASS_SKILLS, CLASS_SKILL_POINTS, CLASS_HIT_DICE } from '@/data/dnd35'
 
 const route = useRoute()
 const router = useRouter()
+
+const props = defineProps<{
+  sheetId?: string
+  isEmbedded?: boolean
+  onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
+  onDualRoll?: (label: string, atkDisplay: string, dmgDisplay: string, atkEval: string, dmgEval: string) => void
+}>()
+
+const currentSheetId = computed(() => props.sheetId || route.params.id as string)
+
 const sheet = ref<any>(null)
 const loading = ref(true)
 const saving = ref(false)
@@ -201,8 +211,9 @@ function defaultBonuses() {
 
 // ── Fetch ─────────────────────────────────────────────────────────────────
 async function fetchSheet() {
+  if (!currentSheetId.value) return
   loading.value = true
-  const { data, error } = await supabase.from('sheets').select('*').eq('id', route.params.id).single()
+  const { data, error } = await supabase.from('sheets').select('*').eq('id', currentSheetId.value).single()
   if (error) { console.error(error); router.push('/dashboard') }
   else {
     if (!data.data.bonuses) data.data.bonuses = defaultBonuses()
@@ -229,6 +240,8 @@ function startEdit() {
   if (!copy.spells) copy.spells = []
   if (!copy.shortcuts) copy.shortcuts = []
   if (!copy.equipment) copy.equipment = []
+  if (copy.skillPoints === undefined) copy.skillPoints = 0
+  if (copy.xp === undefined) copy.xp = 0
   editedData.value = copy
   editMode.value = true
   skillPhase.value = 'select'
@@ -324,10 +337,24 @@ const totalRef = computed(() => !d.value ? 0 : (d.value.save_ref ?? 0) + calcMod
 const totalWill = computed(() => !d.value ? 0 : (d.value.save_will ?? 0) + calcMod(attrTotal('wis')) + (b.value.saves?.will ?? 0) + (featBonuses.value['will'] ?? 0))
 
 // ── Skills ────────────────────────────────────────────────────────────────
-const classSkillsSet = computed(() => {
+const baseClassSkills = computed(() => {
   const cls = (editMode.value ? editedData.value?.class : sheet.value?.class) || ''
-  return new Set<string>(CLASS_SKILLS[cls] || [])
+  return CLASS_SKILLS[cls] || []
 })
+
+function isClassSkill(skillName: string) {
+  const skills = baseClassSkills.value
+  if (skills.includes(skillName)) return true
+
+  if (skillName.startsWith('Conhecimento') && skills.includes('Conhecimento (Todos)')) return true
+  if (skillName.startsWith('Ofícios') && skills.includes('Ofícios (Qualquer)')) return true
+  if (skillName.startsWith('Profissão') && skills.includes('Profissão (Qualquer)')) return true
+
+  const cls = (editMode.value ? editedData.value?.class : sheet.value?.class) || ''
+  if (cls === 'Bardo' && skillName.startsWith('Conhecimento')) return true
+
+  return false
+}
 
 const filteredSkillsList = computed(() => {
   const q = skillSearch.value.toLowerCase()
@@ -356,36 +383,90 @@ function skillTotal(name: string, ability: string) {
 /** Increment or decrement skill rank. Class skills ±1, cross-class ±0.5. No hard cap — budget counter shows overspending. */
 function adjustRank(name: string, delta: 1 | -1) {
   if (!editedData.value) return
-  const isClass = classSkillsSet.value.has(name)
+  const isClass = isClassSkill(name)
   const step = isClass ? 1 : 0.5
   const current = editedData.value.skills[name] ?? 0
   const next = Math.max(0, current + delta * step)
   editedData.value.skills[name] = next
 }
 
-// ── Skill Point Budget ─────────────────────────────────────────────────────
-/** Total skill points available: (classBase + INTmod) × 4 at level 1, × level after; Humanos +1/level */
-const skillPointsAvailable = computed(() => {
-  const cls = (editedData.value?.class ?? '') as string
-  const level = Number(editedData.value?.level ?? 1)
-  const intMod = calcMod(attrTotal('int'))
-  const base = (CLASS_SKILL_POINTS[cls] ?? 2) + intMod
-  // Minimum 1 point per level (D&D 3.5 rule)
-  const perLevel = Math.max(1, base)
-  const isHuman = (editedData.value?.race ?? '') === 'Humano'
-  const humanBonus = isHuman ? level : 0
-  // ×4 at 1st level + normal for remaining levels (simplified: total = perLevel × level × multiplier)
-  // Standard rule: level 1 gives ×4, levels 2+ give ×1
-  const total = (perLevel * 4) + (perLevel * Math.max(0, level - 1)) + humanBonus
-  return total
-})
+function addLevelUpSkillPoints() {
+  if (!editedData.value) return
+
+  const cls = (editedData.value.class ?? '') as string
+  const baseInt = Number(editedData.value.attributes?.int?.base ?? 10)
+  const intModForSkills = calcMod(baseInt)
+  const base = CLASS_SKILL_POINTS[cls] ?? 2
+  const isHuman = (editedData.value.race ?? '').toLowerCase().includes('hmano') || (editedData.value.race ?? '').toLowerCase().includes('human')
+
+  // Nível 2+ ganha: (Base da classe + Mod. INT) no mínimo 1. Humano ganha +1.
+  const basePerLevel = Math.max(1, base + intModForSkills)
+  const earned = basePerLevel + (isHuman ? 1 : 0)
+
+  editedData.value.skillPoints = (editedData.value.skillPoints || 0) + earned
+  return earned
+}
+
+function getLevelUpHP() {
+  if (!editedData.value) return 0
+  const cls = (editedData.value.class ?? '') as string
+  const baseCon = Number(editedData.value.attributes?.con?.base ?? 10)
+  const conMod = calcMod(baseCon)
+  const hitDie = CLASS_HIT_DICE[cls] ?? 8
+
+  // Média do dado arredondada pra cima (ex: 1d10 -> 6, 1d8 -> 5, 1d6 -> 4)
+  return Math.max(1, Math.floor(hitDie / 2) + 1 + conMod)
+}
+
+function handleLevelUp() {
+  if (!editedData.value) return
+  if (Number(editedData.value.level) >= 20) return
+
+  editedData.value.level = Number(editedData.value.level) + 1
+
+  // Adiciona Perícias
+  addLevelUpSkillPoints()
+
+  // Adiciona HP
+  const hpGained = getLevelUpHP()
+  editedData.value.hp_max = (editedData.value.hp_max || 0) + hpGained
+  if (sheet.value?.data?.hp_current !== undefined) {
+    sheet.value.data.hp_current += hpGained
+  }
+}
+
+function handleLevelDown() {
+  if (!editedData.value) return
+  if (Number(editedData.value.level) <= 1) return
+
+  const hpLost = getLevelUpHP()
+
+  editedData.value.level = Number(editedData.value.level) - 1
+
+  // Remove Perícias
+  const cls = (editedData.value.class ?? '') as string
+  const baseInt = Number(editedData.value.attributes?.int?.base ?? 10)
+  const intModForSkills = calcMod(baseInt)
+  const base = CLASS_SKILL_POINTS[cls] ?? 2
+  const isHuman = (editedData.value.race ?? '').toLowerCase().includes('hmano') || (editedData.value.race ?? '').toLowerCase().includes('human')
+  const basePerLevel = Math.max(1, base + intModForSkills)
+  const lostSP = basePerLevel + (isHuman ? 1 : 0)
+
+  editedData.value.skillPoints = Math.max(0, (editedData.value.skillPoints || 0) - lostSP)
+
+  // Remove HP
+  editedData.value.hp_max = Math.max(1, (editedData.value.hp_max || 0) - hpLost)
+  if (sheet.value?.data?.hp_current !== undefined) {
+    sheet.value.data.hp_current = Math.max(0, sheet.value.data.hp_current - hpLost)
+  }
+}
 
 /** Total half-points spent across all skills (class skills cost 1, cross-class cost 0.5) */
 const skillPointsSpent = computed(() => {
   if (!editedData.value?.skills) return 0
   const skills = editedData.value.skills as Record<string, number>
   return Object.entries(skills).reduce((sum, [name, ranks]) => {
-    const isClass = classSkillsSet.value.has(name)
+    const isClass = isClassSkill(name)
     // Class skill: ranks = cost (1:1); Cross-class: ranks = cost × 0.5 (each 0.5 rank costs 1 point)
     const cost = isClass ? Number(ranks) : Number(ranks) * 2
     return sum + cost
@@ -434,6 +515,54 @@ function resolveFormula(text: string) {
   })
 }
 
+function handleRoll(label: string, formulaRaw: string, bonus?: number) {
+  if (props.onRoll) {
+    let displayFormula = formulaRaw
+    let evalFormula = resolveFormula(formulaRaw)
+
+    // Fallback for old explicit numeric bonuses (will append naturally)
+    if (bonus !== undefined && bonus !== null) {
+      const bonusStr = Number(bonus) >= 0 ? `+${bonus}` : `${bonus}`
+      displayFormula = `${formulaRaw} ${bonusStr}`
+      evalFormula = `${evalFormula} ${bonusStr}`
+    }
+
+    // Sanitize double math operators caused by modStr (e.g. "+ +5", "+ -3")
+    evalFormula = evalFormula
+      .replace(/\+\s*\+/g, '+')
+      .replace(/\-\s*\+/g, '-')
+      .replace(/\+\s*\-/g, '-')
+      .replace(/\-\s*\-/g, '+')
+
+    props.onRoll(label, displayFormula, evalFormula)
+  }
+}
+
+function handleItemRoll(item: any) {
+  if (typeof item === 'string') return
+
+  if (item.isAttack && props.onDualRoll && item.attackFormula && item.damageFormula) {
+    let atkDisplay = item.attackFormula
+    let dmgDisplay = item.damageFormula
+    let atkEval = resolveFormula(atkDisplay)
+    let dmgEval = resolveFormula(dmgDisplay)
+
+    const bonus = Number(item.attackBonus) || 0
+    if (bonus) {
+      const bonusStr = bonus >= 0 ? `+${bonus}` : `${bonus}`
+      atkDisplay = `${atkDisplay} ${bonusStr}`
+      atkEval = `${atkEval} ${bonusStr}`
+    }
+
+    atkEval = atkEval.replace(/\+\s*\+/g, '+').replace(/\-\s*\+/g, '-').replace(/\+\s*\-/g, '-').replace(/\-\s*\-/g, '+')
+    dmgEval = dmgEval.replace(/\+\s*\+/g, '+').replace(/\-\s*\+/g, '-').replace(/\+\s*\-/g, '-').replace(/\-\s*\-/g, '+')
+
+    props.onDualRoll(item.title, atkDisplay, dmgDisplay, atkEval, dmgEval)
+  } else {
+    handleRoll(item.title, item.rollFormula || '1d20', Number(item.attackBonus) || 0)
+  }
+}
+
 // ── Feats / Spells / Items ────────────────────────────────────────────────
 // ── Feats / Spells / Items ────────────────────────────────────────────────
 function openEditor(type: 'feat' | 'spell' | 'shortcut', item?: any, index = -1) {
@@ -443,12 +572,12 @@ function openEditor(type: 'feat' | 'spell' | 'shortcut', item?: any, index = -1)
   editingIndex.value = index
   if (item) {
     if (typeof item === 'string') {
-      tempItem.value = { title: item, description: '', rollFormula: '', modifiers: [], isAttack: false, spellLevel: 1 }
+      tempItem.value = { title: item, description: '', rollFormula: '', attackFormula: '', damageFormula: '', modifiers: [], isAttack: false, spellLevel: 1 }
     } else {
-      tempItem.value = JSON.parse(JSON.stringify(item))
+      tempItem.value = JSON.parse(JSON.stringify({ attackFormula: '', damageFormula: '', ...item }))
     }
   } else {
-    tempItem.value = { title: '', description: '', rollFormula: '', modifiers: [], isAttack: false, spellLevel: 1, attackBonus: '', cost: '' }
+    tempItem.value = { title: '', description: '', rollFormula: '', attackFormula: '', damageFormula: '', modifiers: [], isAttack: false, spellLevel: 1, attackBonus: '', cost: '' }
   }
   isEditorOpen.value = true
 }
@@ -552,24 +681,25 @@ async function saveResources() {
 }
 
 onMounted(fetchSheet)
+watch(currentSheetId, () => {
+  editMode.value = false
+  editedData.value = null
+  fetchSheet()
+})
 
 
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
-    <div class="max-w-5xl mx-auto px-4 py-8 space-y-4">
+  <div :class="[isEmbedded ? '' : 'min-h-screen bg-background text-foreground']">
+    <div :class="[isEmbedded ? 'space-y-4' : 'max-w-5xl mx-auto px-4 py-8 space-y-4']">
 
       <!-- Top bar -->
-      <div class="flex items-center justify-between">
+      <div v-if="!isEmbedded" class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <Button variant="ghost" class="text-muted-foreground hover:text-primary gap-2 pl-0"
             @click="router.push('/dashboard')">
             <ChevronLeft class="w-4 h-4" /> Voltar
-          </Button>
-          <Button variant="outline" size="sm" @click="showChat = !showChat"
-            :class="showChat ? 'bg-primary/20 border-primary text-primary' : ''">
-            <MessageSquare class="w-4 h-4 mr-2" /> Chat
           </Button>
         </div>
         <div v-if="sheet && !loading" class="flex gap-2">
@@ -585,6 +715,20 @@ onMounted(fetchSheet)
             <Pencil class="w-4 h-4" /> Editar Ficha
           </Button>
         </div>
+      </div>
+
+      <div v-else-if="sheet && !loading" class="flex justify-end gap-2">
+        <template v-if="editMode">
+          <Button variant="outline" size="sm" @click="cancelEdit" class="gap-2">
+            <X class="w-4 h-4" /> Cancelar
+          </Button>
+          <Button @click="saveEdit" size="sm" :disabled="saving" class="gap-2">
+            <Save class="w-4 h-4" /> {{ saving ? 'Salvando...' : 'Salvar' }}
+          </Button>
+        </template>
+        <Button v-else variant="outline" size="sm" @click="startEdit" class="gap-2">
+          <Pencil class="w-4 h-4" /> Editar Ficha
+        </Button>
       </div>
 
       <!-- Loading -->
@@ -637,8 +781,24 @@ onMounted(fetchSheet)
                       </Select>
                     </div>
                     <div>
+                      <Label class="text-xs text-muted-foreground block mb-1">XP Atual</Label>
+                      <Input v-model.number="editedData.xp" type="number" min="0" class="w-24" />
+                    </div>
+                    <div>
                       <Label class="text-xs text-muted-foreground block mb-1">Nível</Label>
-                      <Input v-model.number="editedData.level" type="number" min="1" max="20" class="w-20" />
+                      <div class="flex items-center gap-1">
+                        <Button variant="outline" size="icon"
+                          class="h-9 w-9 text-red-500 border-red-500/50 hover:bg-red-500/10 transition-colors"
+                          @click="handleLevelDown" title="Reduzir Nível (Remove hp e pontos de perícia)">
+                          <Minus class="w-4 h-4" />
+                        </Button>
+                        <Input v-model.number="editedData.level" type="number" min="1" max="20" class="w-16" />
+                        <Button variant="outline" size="icon"
+                          class="h-9 w-9 text-primary border-primary/50 hover:bg-primary/10 transition-colors"
+                          @click="handleLevelUp" title="Subir de Nível (Adiciona hp e pontos de perícia)">
+                          <Plus class="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                     <div>
                       <Label class="text-xs text-muted-foreground block mb-1">Tendência</Label>
@@ -657,9 +817,14 @@ onMounted(fetchSheet)
                     <span class="text-muted-foreground">·</span>
                     <span class="font-semibold">{{ d.class }}</span>
                     <span
-                      class="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider">Nível
-                      {{ d.level }}</span>
-                    <span v-if="d.alignment" class="text-muted-foreground text-sm">{{ d.alignment }}</span>
+                      class="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                      Nível {{ d.level }}
+                    </span>
+                    <span
+                      class="text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
+                      XP: {{ d.xp || 0 }}
+                    </span>
+                    <span v-if="d.alignment" class="text-muted-foreground text-sm ml-1">{{ d.alignment }}</span>
                   </template>
                 </div>
               </div>
@@ -668,11 +833,14 @@ onMounted(fetchSheet)
             <!-- 6 Attributes -->
             <div class="grid grid-cols-6 gap-2">
               <div v-for="key in ATTR_KEYS" :key="key"
-                class="bg-muted/30 border border-border rounded-lg p-2 text-center space-y-1">
-                <p class="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{{ ATTR_LABELS[key] }}
+                class="bg-muted/30 border border-border rounded-lg p-2 text-center space-y-1 cursor-pointer hover:bg-primary/5 transition-colors group"
+                @click="handleRoll(ATTR_LABELS[key] || key.toUpperCase(), '1d20 + @' + key + 'Mod')">
+                <p
+                  class="text-[10px] font-bold text-muted-foreground uppercase tracking-wider group-hover:text-primary transition-colors">
+                  {{ ATTR_LABELS[key] }}
                 </p>
                 <Input v-if="editMode" v-model.number="editedData.attributes[key].base" type="number" min="1" max="30"
-                  class="h-8 text-center text-lg font-bold p-0.5 w-full" />
+                  class="h-8 text-center text-lg font-bold p-0.5 w-full" @click.stop />
                 <p v-else class="text-2xl font-extrabold font-serif text-foreground">{{ attrTotal(key) }}</p>
                 <div class="bg-primary/10 text-primary text-xs font-bold rounded px-1 py-0.5 inline-block min-w-[2rem]">
                   {{ modStr(calcMod(attrTotal(key))) }}
@@ -716,19 +884,25 @@ onMounted(fetchSheet)
 
               <!-- BBA — editable in edit mode -->
               <div
-                class="flex flex-col items-center justify-center bg-zinc-900 border border-border rounded-lg px-3 py-3 text-center">
+                class="flex flex-col items-center justify-center bg-zinc-900 border border-border rounded-lg px-3 py-3 text-center cursor-pointer hover:bg-primary/5 transition-colors group"
+                @click="handleRoll('BBA', '1d20 + @BBA')">
                 <Sword class="w-4 h-4 text-primary mb-1" />
-                <p class="text-[10px] text-muted-foreground font-bold uppercase">BBA</p>
+                <p
+                  class="text-[10px] text-muted-foreground font-bold uppercase group-hover:text-primary transition-colors">
+                  BBA</p>
                 <Input v-if="editMode" v-model.number="editedData.bab" type="number"
-                  class="h-8 w-16 text-center font-bold bg-transparent text-lg mt-0.5" />
+                  class="h-8 w-16 text-center font-bold bg-transparent text-lg mt-0.5" @click.stop />
                 <p v-else class="text-2xl font-extrabold font-serif">{{ modStr(totalBAB) }}</p>
               </div>
 
               <!-- Iniciativa -->
               <div
-                class="flex flex-col items-center justify-center bg-zinc-900 border border-border rounded-lg px-3 py-3 text-center">
+                class="flex flex-col items-center justify-center bg-zinc-900 border border-border rounded-lg px-3 py-3 text-center cursor-pointer hover:bg-primary/5 transition-colors group"
+                @click="handleRoll('Iniciativa', '1d20 + @iniciativa')">
                 <Zap class="w-4 h-4 text-primary mb-1" />
-                <p class="text-[10px] text-muted-foreground font-bold uppercase">Iniciativa</p>
+                <p
+                  class="text-[10px] text-muted-foreground font-bold uppercase group-hover:text-primary transition-colors">
+                  Iniciativa</p>
                 <p class="text-2xl font-extrabold font-serif">{{ modStr(totalInitiative) }}</p>
               </div>
 
@@ -749,16 +923,19 @@ onMounted(fetchSheet)
               <div class="flex flex-col justify-center bg-zinc-900 border border-border rounded-lg px-3 py-3 gap-1">
                 <p class="text-[10px] text-muted-foreground font-bold uppercase text-center mb-1">Resist.</p>
                 <div class="flex justify-between gap-1 text-xs">
-                  <div class="text-center">
-                    <p class="text-[10px] text-muted-foreground">FORT</p>
+                  <div class="text-center cursor-pointer hover:bg-primary/5 rounded px-1 transition-colors group"
+                    @click="handleRoll('Fortitude', '1d20 + @fort')">
+                    <p class="text-[10px] text-muted-foreground group-hover:text-primary transition-colors">FORT</p>
                     <p class="font-bold">{{ modStr(totalFort) }}</p>
                   </div>
-                  <div class="text-center">
-                    <p class="text-[10px] text-muted-foreground">REF</p>
+                  <div class="text-center cursor-pointer hover:bg-primary/5 rounded px-1 transition-colors group"
+                    @click="handleRoll('Reflexos', '1d20 + @ref')">
+                    <p class="text-[10px] text-muted-foreground group-hover:text-primary transition-colors">REF</p>
                     <p class="font-bold">{{ modStr(totalRef) }}</p>
                   </div>
-                  <div class="text-center">
-                    <p class="text-[10px] text-muted-foreground">VON</p>
+                  <div class="text-center cursor-pointer hover:bg-primary/5 rounded px-1 transition-colors group"
+                    @click="handleRoll('Vontade', '1d20 + @will')">
+                    <p class="text-[10px] text-muted-foreground group-hover:text-primary transition-colors">VON</p>
                     <p class="font-bold">{{ modStr(totalWill) }}</p>
                   </div>
                 </div>
@@ -776,7 +953,7 @@ onMounted(fetchSheet)
 
             <!-- Atalhos Panel -->
             <Card class="border-zinc-800 bg-zinc-900/60">
-              <CardHeader class="pb-2">
+              <CardHeader class="p-4 pb-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <Sword class="w-4 h-4 text-primary" />
@@ -787,40 +964,47 @@ onMounted(fetchSheet)
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent class="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+              <CardContent
+                class="px-4 pb-4 pr-2 space-y-2 max-h-[42vh] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
                 <div v-if="!d?.shortcuts?.length" class="text-center py-5 text-muted-foreground/40">
                   <Sword class="w-7 h-7 mx-auto mb-1.5 opacity-20" />
                   <p class="text-xs">Nenhum atalho criado.</p>
                 </div>
                 <div v-else class="space-y-2">
-                  <div v-for="(sc, i) in d.shortcuts" :key="i"
-                    class="relative rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5 group hover:border-zinc-700 transition-colors cursor-pointer">
-                    <div
-                      class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 rounded-lg z-10 transition-opacity">
-                      <Button size="icon" variant="outline" class="h-6 w-6"
-                        @click.stop="openEditor('shortcut', sc, i as number)">
-                        <Pencil class="w-3 h-3" />
-                      </Button>
-                      <Button size="icon" variant="destructive" class="h-6 w-6"
-                        @click.stop="removeShortcut(i as number)">
-                        <Trash2 class="w-3 h-3" />
-                      </Button>
-                    </div>
-                    <p class="text-xs font-bold truncate text-foreground">{{ sc.title }}</p>
-                    <p v-if="sc.description" class="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{{
-                      resolveFormula(sc.description) }}</p>
-                    <div v-if="sc.attackBonus || sc.rollFormula" class="flex gap-1.5 mt-1.5">
-                      <div v-if="sc.attackBonus"
-                        class="flex-1 bg-zinc-900 rounded px-1.5 py-1 text-center border border-zinc-800">
-                        <div class="text-[8px] uppercase text-zinc-500 font-bold">Acerto</div>
-                        <div class="text-xs font-mono font-bold text-green-400">{{ sc.attackBonus }}</div>
-                      </div>
-                      <div v-if="sc.rollFormula"
-                        class="flex-[2] bg-zinc-900 rounded px-1.5 py-1 text-center border border-zinc-800">
-                        <div class="text-[8px] uppercase text-zinc-500 font-bold">Dano</div>
-                        <div class="text-xs font-mono font-bold text-amber-400">{{ resolveFormula(sc.rollFormula) }}
+                  <div v-for="(sc, i) in (d?.shortcuts || [])" :key="i" @click="handleItemRoll(sc)"
+                    class="relative rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5 group hover:border-zinc-700 transition-colors cursor-pointer"
+                    :class="{ 'bg-red-950/10 border-red-900/30 hover:border-red-700/50': sc.isAttack }">
+                    <div class="flex flex-col gap-1">
+                      <div class="flex items-center justify-between">
+                        <span
+                          class="text-xs font-bold text-zinc-200 group-hover:text-primary transition-colors uppercase tracking-tight">{{
+                            sc.title
+                          }}</span>
+                        <div class="flex items-center gap-1.5">
+                          <span v-if="sc.attackBonus" class="text-[10px] text-green-500 font-mono">{{
+                            modStr(Number(sc.attackBonus)) }}</span>
+                          <span v-if="sc.isAttack"
+                            class="text-[9px] font-bold rounded px-1 py-0.5 bg-red-950 border border-red-900 text-red-400">ATK</span>
                         </div>
                       </div>
+                      <div class="flex items-center justify-between">
+                        <span class="text-[10px] text-muted-foreground font-mono truncate max-w-[150px]">{{ sc.isAttack
+                          ?
+                          sc.attackFormula : sc.rollFormula }}</span>
+                        <Dices class="w-3 h-3 text-zinc-600 group-hover:text-primary transition-colors" />
+                      </div>
+                    </div>
+                    <!-- Edit Mode Overlay (inside the loop) -->
+                    <div v-if="editMode"
+                      class="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 rounded-lg z-10 transition-opacity"
+                      @click.stop>
+                      <Button size="icon" variant="outline" class="h-6 w-6"
+                        @click="openEditor('shortcut', sc, i as number)">
+                        <Pencil class="w-3 h-3" />
+                      </Button>
+                      <Button size="icon" variant="destructive" class="h-6 w-6" @click="removeShortcut(i as number)">
+                        <Trash2 class="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -829,7 +1013,7 @@ onMounted(fetchSheet)
 
             <!-- Recursos Panel -->
             <Card class="border-zinc-800 bg-zinc-900/60">
-              <CardHeader class="pb-2">
+              <CardHeader class="p-4 pb-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <Flame class="w-4 h-4 text-primary" />
@@ -844,7 +1028,8 @@ onMounted(fetchSheet)
                   </div>
                 </div>
               </CardHeader>
-              <CardContent class="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
+              <CardContent
+                class="px-4 pb-4 pr-2 space-y-2 max-h-[42vh] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
                 <div v-if="editMode" class="flex gap-1.5 pb-2 border-b border-border/40">
                   <Input v-model="newResName" placeholder="Nome..." class="h-7 text-xs flex-1" />
                   <Input v-model.number="newResMax" type="number" min="1" class="h-7 text-xs w-12 text-center" />
@@ -1029,7 +1214,7 @@ onMounted(fetchSheet)
                               <span class="font-medium truncate block">{{ skill.name }}</span>
                               <span class="text-[10px] text-muted-foreground uppercase">{{ skill.ability }}</span>
                             </div>
-                            <span v-if="classSkillsSet.has(skill.name)"
+                            <span v-if="isClassSkill(skill.name)"
                               class="text-[10px] font-bold text-primary shrink-0">Classe</span>
                           </button>
                         </div>
@@ -1058,10 +1243,10 @@ onMounted(fetchSheet)
                           <div class="divide-y divide-border">
                             <div v-for="skill in allocatedSkills" :key="skill.name"
                               class="grid grid-cols-[1fr_50px_60px_110px_60px] px-3 py-2 items-center text-sm hover:bg-muted/20"
-                              :class="classSkillsSet.has(skill.name) ? 'bg-primary/5' : ''">
+                              :class="isClassSkill(skill.name) ? 'bg-primary/5' : ''">
                               <div class="flex items-center gap-1.5">
                                 <div class="w-1.5 h-1.5 rounded-full shrink-0"
-                                  :class="classSkillsSet.has(skill.name) ? 'bg-primary' : 'bg-border'"></div>
+                                  :class="isClassSkill(skill.name) ? 'bg-primary' : 'bg-border'"></div>
                                 <span class="truncate font-medium text-xs">{{ skill.name }}</span>
                               </div>
                               <div class="text-center text-[10px] text-muted-foreground uppercase font-mono">{{
@@ -1093,24 +1278,34 @@ onMounted(fetchSheet)
                         </div>
                         <!-- Skill point budget bar -->
                         <div
-                          class="flex items-center justify-between gap-4 px-1 py-2 bg-muted/30 rounded-lg border border-border">
+                          class="flex items-center justify-between gap-4 px-3 py-2 bg-muted/30 rounded-lg border border-border">
                           <div class="flex items-center gap-2 flex-1">
                             <span
                               class="text-[11px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">Pontos</span>
                             <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div class="h-full rounded-full transition-all duration-300"
-                                :style="{ width: Math.min(100, skillPointsSpent / skillPointsAvailable * 100) + '%' }"
-                                :class="skillPointsSpent > skillPointsAvailable ? 'bg-red-500' : skillPointsSpent === skillPointsAvailable ? 'bg-green-500' : 'bg-primary'" />
+                                :style="{ width: Math.min(100, (skillPointsSpent / (editedData?.skillPoints || 1)) * 100) + '%' }"
+                                :class="skillPointsSpent > (editedData?.skillPoints || 0) ? 'bg-red-500' : skillPointsSpent === (editedData?.skillPoints || 0) ? 'bg-green-500' : 'bg-primary'" />
                             </div>
-                            <span class="text-xs font-bold tabular-nums shrink-0"
-                              :class="skillPointsSpent > skillPointsAvailable ? 'text-red-400' : 'text-foreground'">
-                              {{ skillPointsSpent }} / {{ skillPointsAvailable }}
-                            </span>
-                            <span v-if="skillPointsSpent > skillPointsAvailable"
-                              class="text-[10px] text-red-400 font-semibold">(+{{ skillPointsSpent -
-                                skillPointsAvailable }}
-                              extra)</span>
+                            <!-- Manual input for static pool -->
+                            <div class="flex items-center gap-1">
+                              <span class="text-xs font-bold tabular-nums shrink-0"
+                                :class="skillPointsSpent > (editedData?.skillPoints || 0) ? 'text-red-400' : 'text-foreground'">
+                                {{ skillPointsSpent }} /
+                              </span>
+                              <input v-model.number="editedData.skillPoints" type="number" min="0"
+                                class="w-14 text-center text-sm font-bold bg-transparent border-b border-border focus:outline-none focus:border-primary tabular-nums [appearance:textfield]" />
+                            </div>
+
+                            <span v-if="skillPointsSpent > (editedData?.skillPoints || 0)"
+                              class="text-[10px] text-red-400 font-semibold leading-none">(Estourado)</span>
                           </div>
+
+                          <!-- Level Up Helper -->
+                          <Button size="sm" variant="outline" class="h-7 text-[10px] gap-1 px-2"
+                            @click="addLevelUpSkillPoints" title="Soma pontos de perícia para +1 nível.">
+                            <Plus class="w-3 h-3" /> Nv
+                          </Button>
                         </div>
                         <div class="flex items-center justify-between text-xs text-muted-foreground pt-1">
                           <button @click="skillPhase = 'select'" class="underline hover:text-foreground">← Alterar
@@ -1128,12 +1323,15 @@ onMounted(fetchSheet)
                         com graduações.</div>
                       <div v-else class="divide-y divide-border">
                         <div v-for="s in activeSkills" :key="s.name"
-                          class="flex items-center justify-between py-2.5 px-1 hover:bg-muted/20 rounded transition-colors">
+                          @click="handleRoll(s.name, '1d20', s.ranks + calcMod(attrTotal(s.ability)))"
+                          class="flex items-center justify-between py-2.5 px-1 hover:bg-muted/20 rounded transition-colors cursor-pointer group">
                           <div>
-                            <span class="text-sm font-medium">{{ s.name }}</span>
+                            <span class="text-sm font-medium group-hover:text-primary transition-colors">{{ s.name
+                            }}</span>
                             <span class="text-xs text-muted-foreground ml-2 uppercase">{{ s.ability }}</span>
                           </div>
-                          <span class="bg-primary/10 text-primary font-bold text-sm px-3 py-0.5 rounded-full">
+                          <span
+                            class="bg-primary/10 text-primary font-bold text-sm px-3 py-0.5 rounded-full tabular-nums">
                             {{ modStr(s.ranks + calcMod(attrTotal(s.ability))) }}
                           </span>
                         </div>
@@ -1187,7 +1385,7 @@ onMounted(fetchSheet)
                         <Zap class="w-4 h-4 shrink-0 mt-1"
                           :class="typeof feat !== 'string' && feat.isAttack ? 'text-red-400' : 'text-primary'" />
                         <div class="flex-1 space-y-1 cursor-pointer"
-                          @click="editMode ? openEditor('feat', feat, i as number) : null">
+                          @click="editMode ? openEditor('feat', feat, i as number) : (typeof feat !== 'string' && feat.rollFormula ? handleRoll(feat.title, feat.rollFormula) : null)">
                           <div class="text-sm font-semibold leading-none flex items-center gap-2">
                             {{ typeof feat === 'string' ? resolveFormula(feat) : feat.title }}
                             <Pencil v-if="editMode" class="w-3 h-3 opacity-0 group-hover:opacity-50" />
@@ -1312,7 +1510,8 @@ onMounted(fetchSheet)
                       magia encontrada.</div>
                     <div v-else class="grid grid-cols-2 md:grid-cols-3 gap-2">
                       <div v-for="({ spell, i }) in filteredSpells" :key="i"
-                        class="relative rounded-lg border p-3 group transition-all duration-200" :class="[
+                        class="relative rounded-lg border p-3 group transition-all duration-200 cursor-pointer hover:bg-primary/5"
+                        :class="[
                           typeof spell !== 'string' && spell.isAttack
                             ? 'bg-red-950/10 border-red-900/30 hover:border-red-700/50'
                             : 'bg-muted/20 border-border hover:border-sidebar-accent',
@@ -1320,7 +1519,7 @@ onMounted(fetchSheet)
                           editMode ? 'cursor-grab active:cursor-grabbing' : ''
                         ]" :draggable="editMode" @dragstart="spellDragStart($event, i)"
                         @dragover="spellDragOver($event, i)" @drop="spellDrop($event, i)" @dragend="spellDragEnd"
-                        @click="editMode ? openEditor('spell', spell, i) : null">
+                        @click="editMode ? openEditor('spell', spell, i) : handleItemRoll(spell)">
                         <!-- Level badge -->
                         <div class="absolute top-2 right-2 flex items-center gap-1">
                           <span v-if="typeof spell !== 'string' && spell.spellLevel >= 0"
@@ -1334,7 +1533,7 @@ onMounted(fetchSheet)
                         <div class="flex items-start gap-2 pr-10 mb-1">
                           <BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5"
                             :class="typeof spell !== 'string' && spell.isAttack ? 'text-red-400' : 'text-primary'" />
-                          <p class="text-sm font-semibold leading-tight">
+                          <p class="text-sm font-semibold leading-tight group-hover:text-primary transition-colors">
                             {{ typeof spell === 'string' ? resolveFormula(spell) : spell.title }}
                           </p>
                         </div>
@@ -1706,15 +1905,25 @@ onMounted(fetchSheet)
           <Textarea v-model="tempItem.description" placeholder="Descrição..." class="min-h-[80px] bg-zinc-900/50" />
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="flex items-center gap-2 pt-2">
+          <input type="checkbox" id="isAtk" v-model="tempItem.isAttack"
+            class="w-4 h-4 rounded border-zinc-700 bg-zinc-900 accent-primary" />
+          <Label for="isAtk" class="cursor-pointer">É um Ataque?</Label>
+        </div>
+
+        <div v-if="!tempItem.isAttack" class="space-y-1">
+          <Label>{{ editingType === 'shortcut' ? 'Dano / Efeito' : 'Fórmula' }}</Label>
+          <Input v-model="tempItem.rollFormula" placeholder="Ex: 1d20 + @intMod" />
+        </div>
+
+        <div v-else class="grid grid-cols-2 gap-4">
           <div class="space-y-1">
-            <Label>{{ editingType === 'shortcut' ? 'Dano / Efeito' : 'Fórmula' }}</Label>
-            <Input v-model="tempItem.rollFormula" placeholder="Ex: 1d8 + @strMod" />
+            <Label>Fórmula de Ataque</Label>
+            <Input v-model="tempItem.attackFormula" placeholder="Ex: 1d20 + @BBA" />
           </div>
-          <div class="flex items-center gap-2 pt-6">
-            <input type="checkbox" id="isAtk" v-model="tempItem.isAttack"
-              class="w-4 h-4 rounded border-zinc-700 bg-zinc-900 accent-primary" />
-            <Label for="isAtk" class="cursor-pointer">É um Ataque?</Label>
+          <div class="space-y-1">
+            <Label>Fórmula de Dano</Label>
+            <Input v-model="tempItem.damageFormula" placeholder="Ex: 1d8 + @strMod" />
           </div>
         </div>
 

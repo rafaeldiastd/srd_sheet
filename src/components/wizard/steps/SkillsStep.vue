@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useWizardStore } from '@/stores/wizardStore'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -23,36 +23,83 @@ const phase = ref<'select' | 'allocate'>('select')
 
 const classSkills = computed(() => {
   const cls = store.character.class
-  return CLASS_SKILLS[cls] || []
+  const baseSkills = CLASS_SKILLS[cls] || []
+
+  // Ex: "Conhecimento (Arcano)" in baseSkills exactly matches the skill.
+  // But some classes might have "Conhecimento (Todos)" or something similar in homebrew/expanded rules. 
+  // Let's also check if they have blanket proficiencies if needed.
+  return baseSkills
 })
 
-const intMod = computed(() => {
-  const score = store.character.attributes.int.base + (store.character.attributes.int.temp || 0)
+function isClassSkill(skillName: string) {
+  const skills = classSkills.value
+  if (skills.includes(skillName)) return true
+
+  // Handle wildcard skills if the class definition includes them (like Bardo or Mago that have many)
+  // E.g., if a class had "Conhecimento (Todos)", then we'd match any "Conhecimento"
+  if (skillName.startsWith('Conhecimento') && skills.includes('Conhecimento (Todos)')) return true
+  if (skillName.startsWith('Ofícios') && skills.includes('Ofícios (Qualquer)')) return true
+  if (skillName.startsWith('Profissão') && skills.includes('Profissão (Qualquer)')) return true
+
+  // D&D 3.5 Specific rule tweak:
+  // If the skill is not specifically listed for the class, it's cross-class.
+  // Wait, the issue might be that we need to ensure ALL knowledges act as class skills if the user buys them, 
+  // ONLY if the class actually has them.
+  // Actually, Mago has many listed explicitly. But what about Bardo? Bardo has "todas as perícias de Conhecimento".
+  // Let's check CLASS_SKILLS for Bardo. It says 'Conhecimento (Arcano)', maybe we need to add a generic check.
+
+  // Let's just do a specific check: Bard gets ALL Knowledge skills in 3.5e
+  if (store.character.class === 'Bardo' && skillName.startsWith('Conhecimento')) return true
+
+  return false
+}
+
+// Intelligence modifier used explicitly for skill points (ignores temporary bonuses per D&D 3.5e rules)
+const skillPointsIntMod = computed(() => {
+  const score = store.character.attributes.int.base
   return Math.floor((score - 10) / 2)
 })
 
 const maxRanks = computed(() => store.character.level + 3)
 const maxCrossClassRanks = computed(() => (store.character.level + 3) / 2)
 
+const isHuman = computed(() => {
+  const r = store.character.race || ''
+  return r.toLowerCase().includes('human')
+})
+
 const totalSkillPoints = computed(() => {
   const cls = store.character.class
   const base = CLASS_SKILL_POINTS[cls] || 2
-  const perLevel = Math.max(1, base + intMod.value)
-  return store.character.level === 1 ? perLevel * 4 : perLevel * 4 + perLevel * (store.character.level - 1)
+
+  // D&D 3.5e rule: Min 1 point per level before human bonus (uses base INT only, temp INT does not grant skill points)
+  let basePerLevel = Math.max(1, base + skillPointsIntMod.value)
+
+  // Level 1: (Base + Int) * 4. Human *gets 4 extra points at level 1* (not multiplied) and +1 per level after.
+  const isHumanChar = isHuman.value
+  const lvl1Points = (basePerLevel * 4) + (isHumanChar ? 4 : 0)
+
+  const futureLevels = Math.max(0, store.character.level - 1)
+  const futurePoints = futureLevels * basePerLevel + (isHumanChar ? futureLevels : 0)
+
+  return lvl1Points + futurePoints
 })
+
+// Sync the total points to the character store so it's saved persistently when creating the character
+watch(totalSkillPoints, (newTotal) => {
+  store.character.skillPoints = newTotal
+}, { immediate: true })
 
 const usedPoints = computed(() => {
   let total = 0
   for (const skill of SKILLS_DATA) {
     if (!selectedSkills.value.has(skill.name)) continue
     const ranks = store.character.skills[skill.name] || 0
-    const isClass = classSkills.value.includes(skill.name)
+    const isClass = isClassSkill(skill.name)
     total += isClass ? ranks : ranks * 2
   }
   return total
 })
-
-const remainingPoints = computed(() => totalSkillPoints.value - usedPoints.value)
 
 // Filtered skills for the selection phase
 const filteredSkills = computed(() => {
@@ -88,14 +135,17 @@ function getAbilityMod(ability: string) {
 
 function getTotal(skillName: string, ability: string) {
   const ranks = store.character.skills[skillName] || 0
-  return ranks + getAbilityMod(ability)
+  return Math.floor(ranks) + getAbilityMod(ability)
 }
 
 function handleRankChange(skillName: string, value: string | number) {
   let val = Number(value)
   if (isNaN(val)) val = 0
-  const isClass = classSkills.value.includes(skillName)
+
+  // Cross-class skills can be bought in 0.5 increments
+  const isClass = isClassSkill(skillName)
   const max = isClass ? maxRanks.value : maxCrossClassRanks.value
+
   val = Math.max(0, Math.min(val, max))
   store.character.skills = { ...store.character.skills, [skillName]: val }
 }
@@ -153,7 +203,7 @@ function handleRankChange(skillName: string, value: string | number) {
           </div>
 
           <!-- Class skill indicator -->
-          <span v-if="classSkills.includes(skill.name)" class="text-xs font-bold text-primary shrink-0">Classe</span>
+          <span v-if="isClassSkill(skill.name)" class="text-xs font-bold text-primary shrink-0">Classe</span>
         </button>
       </div>
 
@@ -175,18 +225,28 @@ function handleRankChange(skillName: string, value: string | number) {
       <!-- Points summary bar -->
       <div class="grid grid-cols-3 gap-4 p-4 bg-card border border-border rounded-lg text-center">
         <div>
-          <p class="text-xs text-muted-foreground uppercase font-bold">Total</p>
-          <p class="text-2xl font-bold text-foreground">{{ totalSkillPoints }}</p>
+          <div class="flex items-center justify-center gap-1.5 opacity-80 mb-0.5">
+            <span class="text-[10px] uppercase font-bold text-muted-foreground whitespace-nowrap">Cálculo</span>
+            <div class="flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-[9px] font-mono leading-none">
+              <span title="D&D 3.5: (Base + Int) × 4 no NVL 1">[(B:{{ CLASS_SKILL_POINTS[store.character.class] || 2 }}
+                + {{ skillPointsIntMod >= 0 ? '+' : '' }}{{ skillPointsIntMod }}) × 4]</span>
+              <span v-if="isHuman" title="Humano NVL 1" class="text-primary">+ 4</span>
+              <span v-if="store.character.level > 1" class="text-muted-foreground ml-1"> + Níveis</span>
+            </div>
+          </div>
+          <p class="text-3xl font-bold text-foreground">{{ store.character.skillPoints || 0 }}</p>
         </div>
-        <div>
-          <p class="text-xs text-muted-foreground uppercase font-bold">Usados</p>
-          <p class="text-2xl font-bold text-foreground">{{ usedPoints }}</p>
+        <div class="flex flex-col items-center">
+          <span
+            class="text-[10px] uppercase font-bold text-muted-foreground opacity-80 mb-0.5 whitespace-nowrap">Distribuídos</span>
+          <p class="text-3xl font-bold text-muted-foreground">{{ usedPoints }}</p>
         </div>
-        <div>
-          <p class="text-xs text-muted-foreground uppercase font-bold">Restantes</p>
-          <p class="text-2xl font-bold"
-            :class="remainingPoints < 0 ? 'text-destructive' : remainingPoints === 0 ? 'text-primary' : 'text-foreground'">
-            {{ remainingPoints }}
+        <div class="flex flex-col items-center">
+          <span
+            class="text-[10px] uppercase font-bold text-muted-foreground opacity-80 mb-0.5 whitespace-nowrap">Restantes</span>
+          <p class="text-3xl font-bold"
+            :class="(store.character.skillPoints || 0) - usedPoints < 0 ? 'text-destructive' : 'text-primary'">
+            {{ (store.character.skillPoints || 0) - usedPoints }}
           </p>
         </div>
       </div>
@@ -209,10 +269,10 @@ function handleRankChange(skillName: string, value: string | number) {
         <div class="max-h-[360px] overflow-y-auto divide-y divide-border">
           <div v-for="skill in chosenSkills" :key="skill.name"
             class="grid grid-cols-[1fr_60px_60px_80px_60px] gap-0 px-3 py-2 items-center text-sm transition-colors hover:bg-muted/20"
-            :class="classSkills.includes(skill.name) ? 'bg-primary/5' : ''">
+            :class="isClassSkill(skill.name) ? 'bg-primary/5' : ''">
             <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full shrink-0"
-                :class="classSkills.includes(skill.name) ? 'bg-primary' : 'bg-muted-foreground/30'"></div>
+                :class="isClassSkill(skill.name) ? 'bg-primary' : 'bg-muted-foreground/30'"></div>
               <span class="truncate font-medium">
                 {{ skill.name }}
                 <span v-if="skill.trainedOnly" class="text-muted-foreground text-xs">*</span>
@@ -225,10 +285,11 @@ function handleRankChange(skillName: string, value: string | number) {
             <div class="flex justify-center">
               <Input type="number" :value="store.character.skills[skill.name] || 0"
                 @input="(e: Event) => handleRankChange(skill.name, (e.target as HTMLInputElement).value)"
-                class="h-7 w-16 text-center px-1 text-sm" min="0"
-                :max="classSkills.includes(skill.name) ? maxRanks : maxCrossClassRanks" step="1" />
+                class="h-7 w-16 text-center px-1 text-sm tabular-nums" min="0"
+                :max="isClassSkill(skill.name) ? maxRanks : maxCrossClassRanks"
+                :step="isClassSkill(skill.name) ? 1 : 0.5" />
             </div>
-            <div class="text-center font-bold text-primary">
+            <div class="text-center font-bold text-primary tabular-nums">
               {{ getTotal(skill.name, skill.ability) >= 0 ? '+' : '' }}{{ getTotal(skill.name, skill.ability) }}
             </div>
           </div>

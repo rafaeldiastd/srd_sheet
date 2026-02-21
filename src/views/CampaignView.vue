@@ -3,12 +3,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { Copy, BookOpen, Scroll, FileText, LogOut } from 'lucide-vue-next'
 import ChatSidebar from '@/components/campaign/ChatSidebar.vue'
-import CampaignRollPanel from '@/components/campaign/CampaignRollPanel.vue'
+import QuickNpcModal from '@/components/campaign/QuickNpcModal.vue'
+import SheetView from '@/views/SheetView.vue'
+import { useCampaignRolls } from '@/lib/useCampaignRolls'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Scroll, Users, Copy, LogOut, Shield, Crown, BookOpen, Check } from 'lucide-vue-next'
+import { Textarea } from '@/components/ui/textarea'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +21,7 @@ const campaign = ref<any>(null)
 const members = ref<any[]>([])
 const loading = ref(true)
 const isDM = ref(false)
+const showNpcModal = ref(false)
 
 // Sheet selector state
 const mySheets = ref<any[]>([])
@@ -27,10 +30,48 @@ const myMemberId = ref<string>('')
 const savingSheet = ref(false)
 const sheetSaved = ref(false)
 
+const notepadContent = ref('')
+
+// Load notepad and last selected sheet from localStorage based on campaign + user
+onMounted(() => {
+    const savedNote = localStorage.getItem(`notepad_${campaignId}_${authStore.user?.id}`)
+    if (savedNote) {
+        notepadContent.value = savedNote
+    }
+
+    const lastSheet = localStorage.getItem(`last_sheet_${campaignId}_${authStore.user?.id}`)
+    if (lastSheet && !selectedSheetId.value) {
+        selectedSheetId.value = lastSheet
+    }
+})
+
+function saveNotepad() {
+    localStorage.setItem(`notepad_${campaignId}_${authStore.user?.id}`, notepadContent.value)
+}
+
 const myCurrentSheetId = computed(() => {
     const me = members.value.find(m => m.user_id === authStore.user?.id)
-    return me?.sheet_id ?? null
+    const dbId = me?.sheet_id
+    if (dbId) return dbId
+
+    // Fallback to the ref (which might be loaded from localStorage)
+    if (selectedSheetId.value && selectedSheetId.value !== 'none') {
+        return selectedSheetId.value
+    }
+
+    return null
 })
+
+const myMemberName = computed(() => {
+    if (isDM.value) return 'Mestre'
+    const activeSheet = mySheets.value.find(s => s.id === selectedSheetId.value)
+    if (activeSheet) return activeSheet.name
+    return authStore.user?.user_metadata?.name || 'Jogador'
+})
+
+const recipientId = ref('all')
+
+const { sendRoll, sendDualRoll } = useCampaignRolls(campaignId, myMemberName, recipientId)
 
 async function fetchCampaign() {
     loading.value = true
@@ -59,7 +100,9 @@ async function fetchCampaign() {
         const me = memberData.find((m: any) => m.user_id === authStore.user?.id)
         if (me) {
             myMemberId.value = me.id
-            selectedSheetId.value = me.sheet_id ?? 'none'
+            const dbSheetId = me.sheet_id ?? 'none'
+            selectedSheetId.value = dbSheetId
+            localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, dbSheetId)
         }
     }
 
@@ -74,6 +117,14 @@ async function fetchMySheets() {
     if (data) mySheets.value = data
 }
 
+function handleNpcSaved(sheetId: string) {
+    showNpcModal.value = false
+    fetchMySheets().then(() => {
+        selectedSheetId.value = sheetId
+        saveActiveSheet()
+    })
+}
+
 async function saveActiveSheet() {
     if (!myMemberId.value) return
     savingSheet.value = true
@@ -86,9 +137,11 @@ async function saveActiveSheet() {
         .eq('id', myMemberId.value)
 
     if (!error) {
-        // Update local state
+        // Update local state and localStorage
         const me = members.value.find(m => m.user_id === authStore.user?.id)
         if (me) me.sheet_id = sheetIdToSave
+
+        localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, selectedSheetId.value)
 
         sheetSaved.value = true
         setTimeout(() => { sheetSaved.value = false }, 2000)
@@ -131,7 +184,31 @@ onMounted(async () => {
                     <div v-else class="h-6 w-32 bg-zinc-800 animate-pulse rounded"></div>
                 </div>
 
+                <!-- Sheet Selector in Header -->
+                <div class="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800">
+                    <Select v-model="selectedSheetId" @update:modelValue="saveActiveSheet">
+                        <SelectTrigger class="h-8 w-[200px] text-xs bg-zinc-950 border-zinc-700">
+                            <SelectValue placeholder="Escolher ficha..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">Nenhuma / Espectador</SelectItem>
+                            <SelectItem v-for="s in mySheets" :key="s.id" :value="s.id">
+                                {{ s.name }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <div class="w-20 text-xs text-muted-foreground flex items-center h-8 px-2">
+                        <span v-if="savingSheet">Salvando...</span>
+                        <span v-else-if="sheetSaved" class="text-green-500">Salvo!</span>
+                    </div>
+                </div>
+
                 <div class="flex items-center gap-3">
+                    <Button v-if="isDM" @click="showNpcModal = true" variant="outline" size="sm"
+                        class="h-8 text-xs border-zinc-700 hover:bg-zinc-800">
+                        Criar NPC
+                    </Button>
+
                     <div v-if="campaign && isDM"
                         class="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
                         <span class="text-xs text-muted-foreground uppercase font-bold">Código:</span>
@@ -147,125 +224,52 @@ onMounted(async () => {
                 </div>
             </header>
 
-            <!-- Dashboard Grid -->
-            <div class="flex-1 p-6 overflow-y-auto">
-                <div v-if="loading" class="flex justify-center py-20">
+            <!-- Two Column Setup: Notepad (Left) + Sheet (Center) -->
+            <!-- The ChatSidebar (Right) is completely outside this element -->
+            <div class="flex-1 flex overflow-hidden">
+                <div v-if="loading" class="flex-1 flex justify-center py-20">
                     <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                 </div>
 
-                <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-
-                    <!-- Members Card -->
-                    <Card class="bg-zinc-900/40 border-zinc-800 md:col-span-2">
-                        <CardHeader>
-                            <CardTitle class="flex items-center gap-2 text-base">
-                                <Users class="w-4 h-4 text-primary" /> Aventureiros
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div v-if="members.length === 0" class="text-sm text-muted-foreground">Ninguém entrou ainda.
-                            </div>
-                            <ul v-else class="space-y-2">
-                                <li v-for="member in members" :key="member.id"
-                                    class="flex items-center justify-between p-3 rounded-lg bg-zinc-950/50 border border-zinc-900 transition-colors hover:border-zinc-800">
-                                    <div class="flex items-center gap-3">
-                                        <!-- Avatar / Icon -->
-                                        <div v-if="member.sheets?.data?.avatar_url"
-                                            class="w-10 h-10 rounded-full overflow-hidden border border-zinc-700 bg-zinc-900">
-                                            <img :src="member.sheets.data.avatar_url"
-                                                class="w-full h-full object-cover" />
-                                        </div>
-                                        <div v-else
-                                            class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                                            <component :is="member.role === 'dm' ? Crown : Shield"
-                                                class="w-5 h-5 text-zinc-500" />
-                                        </div>
-
-                                        <div>
-                                            <div class="flex items-center gap-2">
-                                                <p class="text-sm font-bold text-zinc-200">
-                                                    {{ member.sheets?.name || (member.user_id === authStore.user?.id ?
-                                                        'Você (sem ficha)' : 'Jogador') }}
-                                                </p>
-                                                <span v-if="member.role === 'dm'"
-                                                    class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">MESTRE</span>
-                                                <span v-if="member.user_id === authStore.user?.id"
-                                                    class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">VOCÊ</span>
-                                            </div>
-                                            <p class="text-xs text-muted-foreground" v-if="member.sheets">
-                                                {{ member.sheets.class }} Nvl {{ member.sheets.level }}
-                                            </p>
-                                            <p v-else class="text-xs text-zinc-600 italic">Sem ficha vinculada</p>
-                                        </div>
-                                    </div>
-
-                                    <!-- Action -->
-                                    <Button v-if="member.sheet_id" variant="ghost" size="sm"
-                                        class="h-8 text-xs gap-1 hover:text-primary hover:bg-primary/10"
-                                        @click="router.push(`/sheet/${member.sheet_id}`)">
-                                        <Scroll class="w-3 h-3" /> Ver Ficha
-                                    </Button>
-                                </li>
-                            </ul>
-                        </CardContent>
-                    </Card>
-
-                    <!-- Right Column -->
-                    <div class="flex flex-col gap-4">
-                        <!-- Active Sheet Selector -->
-                        <Card class="bg-zinc-900/40 border-zinc-800">
-                            <CardHeader class="pb-2">
-                                <CardTitle class="text-base flex items-center gap-2">
-                                    <BookOpen class="w-4 h-4 text-primary" /> Minha Ficha Ativa
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent class="space-y-3">
-                                <p class="text-xs text-muted-foreground">Troque sua ficha a qualquer momento.</p>
-                                <Select v-model="selectedSheetId">
-                                    <SelectTrigger class="h-9 text-sm bg-zinc-950 border-zinc-700">
-                                        <SelectValue placeholder="Nenhuma ficha selecionada" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="none">Nenhuma</SelectItem>
-                                        <SelectItem v-for="s in mySheets" :key="s.id" :value="s.id">
-                                            {{ s.name }} — {{ s.class }} Nvl {{ s.level }}
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Button class="w-full h-8 text-xs gap-1.5"
-                                    :disabled="savingSheet || selectedSheetId === (myCurrentSheetId ?? 'none')"
-                                    @click="saveActiveSheet">
-                                    <Check v-if="sheetSaved" class="w-3 h-3" />
-                                    {{ sheetSaved ? 'Salvo!' : savingSheet ? 'Salvando...' : 'Usar esta ficha' }}
-                                </Button>
-
-                                <Button v-if="selectedSheetId" variant="ghost"
-                                    class="w-full h-8 text-xs gap-1 hover:text-primary hover:bg-primary/10"
-                                    @click="router.push(`/sheet/${selectedSheetId}`)">
-                                    <Scroll class="w-3 h-3" /> Abrir ficha completa
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <!-- Info Card -->
-                        <Card class="bg-zinc-900/40 border-zinc-800">
-                            <CardHeader>
-                                <CardTitle class="text-base">Mesa de Jogo</CardTitle>
-                            </CardHeader>
-                            <CardContent class="text-sm text-muted-foreground">
-                                <p>Funcionalidade de rolagens públicas e mapas em breve.</p>
-                            </CardContent>
-                        </Card>
+                <template v-else>
+                    <!-- Notepad (Left Panel) -->
+                    <div class="w-80 border-r border-border bg-zinc-950/30 flex flex-col hidden lg:flex">
+                        <div class="h-10 border-b border-border flex items-center px-4 bg-zinc-950/50 shrink-0">
+                            <h2
+                                class="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                <BookOpen class="w-3.5 h-3.5" /> Anotações
+                            </h2>
+                        </div>
+                        <div class="flex-1 p-3">
+                            <Textarea v-model="notepadContent" @input="saveNotepad"
+                                placeholder="Anotações da campanha... Suas notas são salvas apenas para você."
+                                class="w-full h-full resize-none border-none bg-transparent focus-visible:ring-0 p-1 text-sm text-zinc-300 placeholder:text-zinc-600 font-mono" />
+                        </div>
                     </div>
-                </div>
+
+                    <!-- Character Sheet (Center Panel) -->
+                    <div
+                        class="flex-1 overflow-y-auto bg-background px-4 lg:px-8 py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700">
+                        <div v-if="myCurrentSheetId">
+                            <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
+                                :on-dual-roll="sendDualRoll" />
+                        </div>
+                        <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4">
+                            <FileText class="w-12 h-12 text-zinc-800" />
+                            <h2 class="text-xl font-bold">Nenhuma Ficha Ativa</h2>
+                            <p class="text-muted-foreground max-w-sm">Você precisa selecionar uma ficha no cabeçalho
+                                acima para visualizá-la e realizar rolagens de atributos, testes e ataques.</p>
+                        </div>
+                    </div>
+                </template>
             </div>
         </main>
 
-        <!-- Roll Panel (left of chat) -->
-        <CampaignRollPanel :campaign-id="campaignId" />
-
         <!-- Chat Sidebar -->
-        <ChatSidebar :campaign-id="campaignId" />
+        <ChatSidebar :campaign-id="campaignId" :member-name="myMemberName" :members="members" :dm-id="campaign?.dm_id"
+            v-model:recipientId="recipientId" />
+
+        <!-- NPC Modal -->
+        <QuickNpcModal v-if="showNpcModal" @close="showNpcModal = false" @saved="handleNpcSaved" />
     </div>
 </template>

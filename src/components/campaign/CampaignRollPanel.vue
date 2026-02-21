@@ -66,72 +66,10 @@ const spells = computed(() =>
     )
 )
 
-// ── Dice Engine ───────────────────────────────────────────────────────────────
-function rollDie(sides: number): number {
-    return Math.floor(Math.random() * sides) + 1
-}
+import { useCampaignRolls } from '@/lib/useCampaignRolls'
 
-/** Evaluate NdX+bonus formulas like 1d20+5, 2d6+3, etc. */
-function evaluateFormula(formula: string): { label: string; result: number; breakdown: string } {
-    const clean = formula.trim().replace(/\s/g, '')
-    let total = 0
-    const parts: string[] = []
+const { rolling, sendRoll, modStr } = useCampaignRolls(props.campaignId, memberName.value)
 
-    // Match all terms: NdX, +N, -N
-    const regex = /([+-]?\d*d\d+|[+-]?\d+)/gi
-    const matches = clean.match(regex) || []
-
-    for (const term of matches) {
-        if (term.includes('d')) {
-            const [nStr, sidesStr] = term.split('d')
-            const n = Math.abs(parseInt(nStr || '1', 10)) || 1
-            const sides = parseInt(sidesStr ?? '0', 10)
-            const sign = term.startsWith('-') ? -1 : 1
-            let rollTotal = 0
-            const rolls: number[] = []
-            for (let i = 0; i < n; i++) {
-                const r = rollDie(sides)
-                rolls.push(r)
-                rollTotal += r
-            }
-            total += sign * rollTotal
-            parts.push(`${sign < 0 ? '-' : ''}[${rolls.join('+')}]`)
-        } else {
-            const num = parseInt(term, 10)
-            total += num
-            if (num !== 0) parts.push(num > 0 ? `+${num}` : `${num}`)
-        }
-    }
-
-    return { label: formula, result: total, breakdown: parts.join(' ') }
-}
-
-function modStr(n: number): string {
-    return n >= 0 ? `+${n}` : `${n}`
-}
-
-// ── Rolling ───────────────────────────────────────────────────────────────────
-const rolling = ref(false)
-
-async function sendRoll(label: string, formula: string, bonus = 0) {
-    if (rolling.value) return
-    rolling.value = true
-
-    const fullFormula = bonus !== 0 ? `${formula}${modStr(bonus)}` : formula
-    const { result, breakdown } = evaluateFormula(fullFormula)
-
-    const content = `🎲 ${label}: ${result} (${breakdown})`
-
-    await supabase.from('messages').insert({
-        campaign_id: props.campaignId,
-        user_id: authStore.user?.id ?? null,
-        sender_name: memberName.value,
-        content,
-        type: 'roll',
-    })
-
-    rolling.value = false
-}
 
 async function rollInitiative() {
     await sendRoll('Iniciativa', `1d20`, initiative.value)
