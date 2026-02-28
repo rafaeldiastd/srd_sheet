@@ -3,14 +3,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
-import { Copy, BookOpen, Scroll, FileText, LogOut } from 'lucide-vue-next'
+import { Copy, BookOpen, Scroll, FileText, LayoutTemplate, MessageSquare, LogOut } from 'lucide-vue-next'
 import ChatSidebar from '@/components/campaign/ChatSidebar.vue'
 import QuickNpcModal from '@/components/campaign/QuickNpcModal.vue'
 import SheetView from '@/views/SheetView.vue'
 import { useCampaignRolls } from '@/lib/useCampaignRolls'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+import SheetSelectorModal from '@/components/campaign/SheetSelectorModal.vue'
+import NotepadPanel from '@/components/campaign/notepad/NotepadPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,44 +21,21 @@ const members = ref<any[]>([])
 const loading = ref(true)
 const isDM = ref(false)
 const showNpcModal = ref(false)
+const showSheetSelector = ref(false)
+
+// UI state
+const showChat = ref(true)
+const showNotes = ref(false)
 
 // Sheet selector state
 const mySheets = ref<any[]>([])
-const selectedSheetId = ref<string>('')
+const selectedSheetId = ref<string>('none')
 const myMemberId = ref<string>('')
 const savingSheet = ref(false)
 const sheetSaved = ref(false)
 
-const notepadContent = ref('')
-
-// Load notepad and last selected sheet from localStorage based on campaign + user
-onMounted(() => {
-    const savedNote = localStorage.getItem(`notepad_${campaignId}_${authStore.user?.id}`)
-    if (savedNote) {
-        notepadContent.value = savedNote
-    }
-
-    const lastSheet = localStorage.getItem(`last_sheet_${campaignId}_${authStore.user?.id}`)
-    if (lastSheet && !selectedSheetId.value) {
-        selectedSheetId.value = lastSheet
-    }
-})
-
-function saveNotepad() {
-    localStorage.setItem(`notepad_${campaignId}_${authStore.user?.id}`, notepadContent.value)
-}
-
 const myCurrentSheetId = computed(() => {
-    const me = members.value.find(m => m.user_id === authStore.user?.id)
-    const dbId = me?.sheet_id
-    if (dbId) return dbId
-
-    // Fallback to the ref (which might be loaded from localStorage)
-    if (selectedSheetId.value && selectedSheetId.value !== 'none') {
-        return selectedSheetId.value
-    }
-
-    return null
+    return selectedSheetId.value === 'none' ? null : selectedSheetId.value
 })
 
 const myMemberName = computed(() => {
@@ -69,9 +45,19 @@ const myMemberName = computed(() => {
     return authStore.user?.user_metadata?.name || 'Jogador'
 })
 
+const myAvatarUrl = computed(() => {
+    if (isDM.value) return null
+    const activeSheet = mySheets.value.find(s => s.id === selectedSheetId.value)
+    if (!activeSheet?.data) return null
+    const data = typeof activeSheet.data === 'string' 
+      ? JSON.parse(activeSheet.data) 
+      : activeSheet.data
+    return data.avatar_url || null
+})
+
 const recipientId = ref('all')
 
-const { sendRoll, sendDualRoll } = useCampaignRolls(campaignId, myMemberName, recipientId)
+const { sendRoll, sendAttackRoll, sendSpellMessage } = useCampaignRolls(campaignId, myMemberName, recipientId, myAvatarUrl)
 
 async function fetchCampaign() {
     loading.value = true
@@ -100,9 +86,20 @@ async function fetchCampaign() {
         const me = memberData.find((m: any) => m.user_id === authStore.user?.id)
         if (me) {
             myMemberId.value = me.id
-            const dbSheetId = me.sheet_id ?? 'none'
-            selectedSheetId.value = dbSheetId
-            localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, dbSheetId)
+            
+            // Priority: LocalStorage > Database > 'none'
+            const lastSheetId = localStorage.getItem(`last_sheet_${campaignId}_${authStore.user?.id}`)
+            const dbSheetId = me.sheet_id
+            
+            if (lastSheetId && lastSheetId !== 'none') {
+                selectedSheetId.value = lastSheetId
+            } else if (dbSheetId) {
+                selectedSheetId.value = dbSheetId
+                // Keep localstorage synced
+                localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, dbSheetId)
+            } else {
+                selectedSheetId.value = 'none'
+            }
         }
     }
 
@@ -110,38 +107,58 @@ async function fetchCampaign() {
 }
 
 async function fetchMySheets() {
+    // Busca as fichas atreladas rigorosamente a esta campanha
     const { data } = await supabase
         .from('sheets')
-        .select('id, name, class, level')
-        .order('name')
-    if (data) mySheets.value = data
+        .select('id, name, class, level, data, campaign_id')
+        .eq('user_id', authStore.user?.id)
+        .eq('campaign_id', campaignId)
+        
+    if (data) {
+        mySheets.value = data
+    }
 }
 
 function handleNpcSaved(sheetId: string) {
     showNpcModal.value = false
     fetchMySheets().then(() => {
-        selectedSheetId.value = sheetId
-        saveActiveSheet()
+        handleSheetSelected(sheetId)
     })
 }
 
-async function saveActiveSheet() {
+async function handleSheetSelected(sheetId: string) {
     if (!myMemberId.value) return
     savingSheet.value = true
     sheetSaved.value = false
+    selectedSheetId.value = sheetId
+    showSheetSelector.value = false // close modal
 
-    const sheetIdToSave = selectedSheetId.value === 'none' ? null : selectedSheetId.value
+    const sheetIdToSave = sheetId === 'none' ? null : sheetId
+    
+    // Check if the sheet needs to be linked to this campaign first
+    if (sheetIdToSave) {
+        const sheet = mySheets.value.find(s => s.id === sheetIdToSave)
+        if (sheet && sheet.campaign_id !== campaignId) {
+             await supabase
+                .from('sheets')
+                .update({ campaign_id: campaignId })
+                .eq('id', sheetIdToSave)
+             sheet.campaign_id = campaignId // update locally
+        }
+    }
+
+    // Set as active character in campaign
     const { error } = await supabase
         .from('campaign_members')
         .update({ sheet_id: sheetIdToSave })
         .eq('id', myMemberId.value)
 
     if (!error) {
-        // Update local state and localStorage
+        // Update local state
         const me = members.value.find(m => m.user_id === authStore.user?.id)
         if (me) me.sheet_id = sheetIdToSave
 
-        localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, selectedSheetId.value)
+        localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, sheetIdToSave || 'none')
 
         sheetSaved.value = true
         setTimeout(() => { sheetSaved.value = false }, 2000)
@@ -164,112 +181,155 @@ function leaveCampaign() {
 onMounted(async () => {
     await fetchCampaign()
     await fetchMySheets()
+
+    // Validate if the selected sheet still exists 
+    // (User might have deleted it from the database manually)
+    if (selectedSheetId.value !== 'none') {
+        const stillExists = mySheets.value.some(s => s.id === selectedSheetId.value)
+        if (!stillExists) {
+            selectedSheetId.value = 'none'
+            localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, 'none')
+            // Optionally update the DB as well if we are the user
+            if (myMemberId.value) {
+                await supabase.from('campaign_members').update({ sheet_id: null }).eq('id', myMemberId.value)
+            }
+        }
+    }
 })
 </script>
 
 <template>
     <div class="flex h-screen bg-background text-foreground overflow-hidden">
         <!-- Main Content Area -->
-        <main class="flex-1 flex flex-col min-w-0">
+        <main class="flex-1 flex flex-col min-w-0" :class="{ 'hidden lg:flex': showChat && !myCurrentSheetId }">
 
             <!-- Top Bar -->
-            <header class="h-16 border-b border-border flex items-center justify-between px-6 bg-zinc-950/50">
-                <div class="flex items-center gap-3">
+            <header class="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 bg-zinc-950/50">
+                <div class="flex items-center gap-2 sm:gap-3">
                     <Button variant="ghost" size="icon" @click="router.push('/dashboard')">
                         <Scroll class="w-5 h-5 text-muted-foreground" />
                     </Button>
-                    <div v-if="campaign">
-                        <h1 class="font-serif font-bold text-xl">{{ campaign.name }}</h1>
+                    <div v-if="campaign" class="flex-1 min-w-0">
+                        <h1 class="font-serif font-bold text-lg sm:text-xl truncate max-w-[120px] sm:max-w-xs">{{ campaign.name }}</h1>
                     </div>
-                    <div v-else class="h-6 w-32 bg-zinc-800 animate-pulse rounded"></div>
+                    <div v-else class="h-6 w-24 sm:w-32 bg-zinc-800 animate-pulse rounded"></div>
                 </div>
 
-                <!-- Sheet Selector in Header -->
-                <div class="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800">
-                    <Select v-model="selectedSheetId" @update:modelValue="saveActiveSheet">
-                        <SelectTrigger class="h-8 w-[200px] text-xs bg-zinc-950 border-zinc-700">
-                            <SelectValue placeholder="Escolher ficha..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="none">Nenhuma / Espectador</SelectItem>
-                            <SelectItem v-for="s in mySheets" :key="s.id" :value="s.id">
-                                {{ s.name }}
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <div class="w-20 text-xs text-muted-foreground flex items-center h-8 px-2">
-                        <span v-if="savingSheet">Salvando...</span>
-                        <span v-else-if="sheetSaved" class="text-green-500">Salvo!</span>
-                    </div>
-                </div>
+                <!-- Navigation Controls -->
+                <nav class="flex items-center gap-1">
 
-                <div class="flex items-center gap-3">
-                    <Button v-if="isDM" @click="showNpcModal = true" variant="outline" size="sm"
-                        class="h-8 text-xs border-zinc-700 hover:bg-zinc-800">
-                        Criar NPC
-                    </Button>
+                    <!-- Notas -->
+                    <button
+                      @click="showNotes = !showNotes"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showNotes
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <BookOpen class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Notas</span>
+                    </button>
 
+                    <!-- Chat -->
+                    <button
+                      @click="showChat = !showChat"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showChat
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <MessageSquare class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Chat</span>
+                    </button>
+
+
+                    <!-- Trocar Ficha -->
+                    <button
+                      @click="showSheetSelector = true"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors border',
+                        sheetSaved
+                          ? 'border-green-600/40 bg-green-600/10 text-green-400'
+                          : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <LayoutTemplate class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">{{ selectedSheetId === 'none' ? 'Espectador' : 'Trocar Ficha' }}</span>
+                    </button>
+
+
+                    <!-- DM: Join Code -->
                     <div v-if="campaign && isDM"
-                        class="flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
-                        <span class="text-xs text-muted-foreground uppercase font-bold">Código:</span>
-                        <code class="text-sm font-mono text-primary font-bold">{{ campaign.join_code }}</code>
+                        class="hidden md:flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-md border border-zinc-800 h-8">
+                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Código:</span>
+                        <code class="text-xs font-mono text-primary font-bold">{{ campaign.join_code }}</code>
                         <button @click="copyJoinCode" class="text-muted-foreground hover:text-foreground">
-                            <Copy class="w-3.5 h-3.5" />
+                            <Copy class="w-3 h-3" />
                         </button>
                     </div>
 
-                    <Button variant="ghost" size="icon" @click="leaveCampaign">
-                        <LogOut class="w-5 h-5 text-destructive" />
-                    </Button>
-                </div>
+                    <!-- DM: Criar NPC -->
+                    <button v-if="isDM" @click="showNpcModal = true"
+                        class="hidden md:flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                        Criar NPC
+                    </button>
+
+                    <!-- Sair -->
+                    <button
+                      @click="leaveCampaign"
+                      class="flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Sair</span>
+                    </button>
+                </nav>
+
             </header>
 
-            <!-- Two Column Setup: Notepad (Left) + Sheet (Center) -->
-            <!-- The ChatSidebar (Right) is completely outside this element -->
-            <div class="flex-1 flex overflow-hidden">
-                <div v-if="loading" class="flex-1 flex justify-center py-20">
+            <!-- Workspace Setup: Notepad (Left) + Sheet (Center) -->
+            <div class="flex-1 flex overflow-hidden relative">
+                <div v-if="loading" class="absolute inset-0 z-10 bg-background/50 flex justify-center py-20 backdrop-blur-sm">
                     <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                 </div>
 
-                <template v-else>
-                    <!-- Notepad (Left Panel) -->
-                    <div class="w-80 border-r border-border bg-zinc-950/30 flex flex-col hidden lg:flex">
-                        <div class="h-10 border-b border-border flex items-center px-4 bg-zinc-950/50 shrink-0">
-                            <h2
-                                class="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                                <BookOpen class="w-3.5 h-3.5" /> Anotações
-                            </h2>
-                        </div>
-                        <div class="flex-1 p-3">
-                            <Textarea v-model="notepadContent" @input="saveNotepad"
-                                placeholder="Anotações da campanha... Suas notas são salvas apenas para você."
-                                class="w-full h-full resize-none border-none bg-transparent focus-visible:ring-0 p-1 text-sm text-zinc-300 placeholder:text-zinc-600 font-mono" />
-                        </div>
-                    </div>
+                <!-- Notepad (Left Panel) -->
+                <NotepadPanel 
+                  v-if="showNotes"
+                  :campaign-id="campaignId"
+                  :visible="showNotes"
+                  @close="showNotes = false"
+                />
 
-                    <!-- Character Sheet (Center Panel) -->
-                    <div
-                        class="flex-1 overflow-y-auto bg-background px-4 lg:px-8 py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700">
-                        <div v-if="myCurrentSheetId">
-                            <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
-                                :on-dual-roll="sendDualRoll" />
-                        </div>
-                        <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4">
-                            <FileText class="w-12 h-12 text-zinc-800" />
-                            <h2 class="text-xl font-bold">Nenhuma Ficha Ativa</h2>
-                            <p class="text-muted-foreground max-w-sm">Você precisa selecionar uma ficha no cabeçalho
-                                acima para visualizá-la e realizar rolagens de atributos, testes e ataques.</p>
-                        </div>
+                <!-- Character Sheet (Center Panel) -->
+                <div class="flex-1 overflow-y-auto bg-background px-0 sm:px-4 lg:px-8 py-0 sm:py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700" 
+                     :class="{ 'hidden lg:block': showNotes || (showChat && !myCurrentSheetId) }">
+                    <div v-if="myCurrentSheetId" class="h-full">
+                        <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
+                            :on-attack-roll="sendAttackRoll"
+                            :on-spell-roll="sendSpellMessage" />
                     </div>
-                </template>
+                    <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
+                        <FileText class="w-12 h-12 text-zinc-800" />
+                        <h2 class="text-xl font-bold">Espectador</h2>
+                        <p class="text-muted-foreground max-w-sm">Você está acompanhando a campanha sem uma ficha ativa. Use o botão no topo para selecionar ou criar uma ficha para rolar dados.</p>
+                        <Button @click="showSheetSelector = true" class="mt-4">
+                             Selecionar Ficha
+                        </Button>
+                    </div>
+                </div>
             </div>
         </main>
 
         <!-- Chat Sidebar -->
-        <ChatSidebar :campaign-id="campaignId" :member-name="myMemberName" :members="members" :dm-id="campaign?.dm_id"
-            v-model:recipientId="recipientId" />
+        <ChatSidebar v-show="showChat" :campaign-id="campaignId" :member-name="myMemberName" :avatar-url="myAvatarUrl" :members="members" :dm-id="campaign?.dm_id"
+            v-model:recipientId="recipientId" class="w-full lg:w-96 flex-shrink-0" :class="{ 'hidden lg:flex': !showChat }" />
 
-        <!-- NPC Modal -->
+        <!-- Modals -->
         <QuickNpcModal v-if="showNpcModal" @close="showNpcModal = false" @saved="handleNpcSaved" />
+        <SheetSelectorModal v-model="showSheetSelector" :sheets="mySheets" :active-sheet-id="selectedSheetId" @select-sheet="handleSheetSelected" />
     </div>
 </template>

@@ -32,6 +32,8 @@ const classSkills = computed(() => {
 })
 
 function isClassSkill(skillName: string) {
+  if (store.character.class === 'Personalizada') return true // Custom class can treat any skill as a class skill
+
   const skills = classSkills.value
   if (skills.includes(skillName)) return true
 
@@ -60,17 +62,14 @@ const skillPointsIntMod = computed(() => {
   return Math.floor((score - 10) / 2)
 })
 
-const maxRanks = computed(() => store.character.level + 3)
-const maxCrossClassRanks = computed(() => (store.character.level + 3) / 2)
-
 const isHuman = computed(() => {
   const r = store.character.race || ''
   return r.toLowerCase().includes('human')
 })
 
-const totalSkillPoints = computed(() => {
+const calculatedSkillPoints = computed(() => {
   const cls = store.character.class
-  const base = CLASS_SKILL_POINTS[cls] || 2
+  const base = store.character.customSkillPoints || CLASS_SKILL_POINTS[cls] || 2
 
   // D&D 3.5e rule: Min 1 point per level before human bonus (uses base INT only, temp INT does not grant skill points)
   let basePerLevel = Math.max(1, base + skillPointsIntMod.value)
@@ -85,9 +84,11 @@ const totalSkillPoints = computed(() => {
   return lvl1Points + futurePoints
 })
 
-// Sync the total points to the character store so it's saved persistently when creating the character
-watch(totalSkillPoints, (newTotal) => {
-  store.character.skillPoints = newTotal
+// Sync the calculated points only if the user hasn't modified it manually (or if it's 0)
+watch(calculatedSkillPoints, (newTotal) => {
+  if (!store.character.skillPoints) {
+    store.character.skillPoints = newTotal
+  }
 }, { immediate: true })
 
 const usedPoints = computed(() => {
@@ -142,11 +143,8 @@ function handleRankChange(skillName: string, value: string | number) {
   let val = Number(value)
   if (isNaN(val)) val = 0
 
-  // Cross-class skills can be bought in 0.5 increments
-  const isClass = isClassSkill(skillName)
-  const max = isClass ? maxRanks.value : maxCrossClassRanks.value
-
-  val = Math.max(0, Math.min(val, max))
+  // Allow unrestricted rank allocation, just prevent negative
+  val = Math.max(0, val)
   store.character.skills = { ...store.character.skills, [skillName]: val }
 }
 </script>
@@ -224,17 +222,15 @@ function handleRankChange(skillName: string, value: string | number) {
 
       <!-- Points summary bar -->
       <div class="grid grid-cols-3 gap-4 p-4 bg-card border border-border rounded-lg text-center">
-        <div>
+        <div class="flex flex-col items-center">
           <div class="flex items-center justify-center gap-1.5 opacity-80 mb-0.5">
-            <span class="text-[10px] uppercase font-bold text-muted-foreground whitespace-nowrap">Cálculo</span>
+            <span class="text-[10px] uppercase font-bold text-muted-foreground whitespace-nowrap">Total Pontos</span>
             <div class="flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-[9px] font-mono leading-none">
-              <span title="D&D 3.5: (Base + Int) × 4 no NVL 1">[(B:{{ CLASS_SKILL_POINTS[store.character.class] || 2 }}
-                + {{ skillPointsIntMod >= 0 ? '+' : '' }}{{ skillPointsIntMod }}) × 4]</span>
-              <span v-if="isHuman" title="Humano NVL 1" class="text-primary">+ 4</span>
-              <span v-if="store.character.level > 1" class="text-muted-foreground ml-1"> + Níveis</span>
+              <span title="D&D 3.5: (Base + Int) × 4 no NVL 1">Sugestão: {{ calculatedSkillPoints }}</span>
             </div>
           </div>
-          <p class="text-3xl font-bold text-foreground">{{ store.character.skillPoints || 0 }}</p>
+          <Input type="number" v-model.number="store.character.skillPoints"
+            class="h-9 w-24 text-center text-xl font-bold bg-transparent border-primary/50" />
         </div>
         <div class="flex flex-col items-center">
           <span
@@ -286,7 +282,6 @@ function handleRankChange(skillName: string, value: string | number) {
               <Input type="number" :value="store.character.skills[skill.name] || 0"
                 @input="(e: Event) => handleRankChange(skill.name, (e.target as HTMLInputElement).value)"
                 class="h-7 w-16 text-center px-1 text-sm tabular-nums" min="0"
-                :max="isClassSkill(skill.name) ? maxRanks : maxCrossClassRanks"
                 :step="isClassSkill(skill.name) ? 1 : 0.5" />
             </div>
             <div class="text-center font-bold text-primary tabular-nums">
