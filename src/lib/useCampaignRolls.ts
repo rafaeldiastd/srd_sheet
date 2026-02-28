@@ -3,7 +3,23 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { DiceRoller } from '@dice-roller/rpg-dice-roller'
 
-export function useCampaignRolls(campaignId: string, memberName: Ref<string>, recipientId: Ref<string>) {
+export interface SpellData {
+    title: string
+    spellLevel: number
+    school?: string
+    description?: string
+    isAttack?: boolean
+    attackFormula?: string
+    damageFormula?: string
+    rollFormula?: string  // para efeitos não-ataque (cura, etc)
+}
+
+export function useCampaignRolls(
+    campaignId: string,
+    memberName: Ref<string>,
+    recipientId: Ref<string>,
+    avatarUrl?: Ref<string | null>
+) {
     const authStore = useAuthStore()
     const roller = new DiceRoller()
     const rolling = ref(false)
@@ -55,6 +71,8 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
             campaign_id: campaignId,
             user_id: authStore.user?.id ?? null,
             sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
             content,
             type: isWhisper ? 'whisper' : 'roll',
         })
@@ -64,32 +82,29 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
         rolling.value = false
     }
 
-    async function sendDualRoll(label: string, atkDisplay: string, dmgDisplay: string, atkEval?: string, dmgEval?: string) {
-        if (rolling.value) return
+    async function sendAttackRoll(
+        label: string,
+        attackFormula: string,
+        damageFormula: string
+    ): Promise<string | null> {
+        if (rolling.value) return null
         rolling.value = true
 
-        const atkFormula = atkEval || atkDisplay
-        const dmgFormula = dmgEval || dmgDisplay
-
-        const atkResult = evaluateFormula(atkFormula)
-        const dmgResult = evaluateFormula(dmgFormula)
-
         const isWhisper = recipientId.value !== 'all'
+        const attackResult = evaluateFormula(attackFormula)
 
         const payload: any = {
             label,
-            is_dual_roll: true,
-            is_roll: true, // for whisper chat filter detection
+            is_attack: true,
+            is_roll: true, // for backward compatibility or whisper chat filter detection
             attack: {
-                formula: atkDisplay,
-                result: atkResult.result,
-                breakdown: atkResult.breakdown
+                formula: attackFormula,
+                result: attackResult.result,
+                breakdown: attackResult.breakdown
             },
-            damage: {
-                formula: dmgDisplay,
-                result: dmgResult.result,
-                breakdown: dmgResult.breakdown
-            }
+            damage: null,
+            damage_formula: damageFormula,
+            damage_pending: true
         }
 
         if (isWhisper) {
@@ -98,24 +113,193 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
 
         const content = JSON.stringify(payload)
 
-        const { error } = await supabase.from('messages').insert({
+        const { data, error } = await supabase.from('messages').insert({
             campaign_id: campaignId,
             user_id: authStore.user?.id ?? null,
             sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
             content,
             type: isWhisper ? 'whisper' : 'roll',
-        })
+        }).select('id').single()
 
-        if (error) console.error('Error sending dual roll:', error)
+        if (error) console.error('Error sending attack roll:', error)
 
         rolling.value = false
+        return data?.id || null
+    }
+
+    async function rollDamage(messageId: string, damageFormula: string): Promise<void> {
+        if (rolling.value) return
+        rolling.value = true
+
+        const { data: msgToUpdate, error: fetchError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('id', messageId)
+            .single()
+
+        if (fetchError || !msgToUpdate) {
+            console.error('Could not find message to update', fetchError)
+            rolling.value = false
+            return
+        }
+
+        let parsedContent
+        try {
+            parsedContent = JSON.parse(msgToUpdate.content)
+        } catch {
+            rolling.value = false
+            return
+        }
+
+        const damageResult = evaluateFormula(damageFormula)
+
+        const payload = {
+            ...parsedContent,
+            damage: {
+                formula: damageFormula,
+                result: damageResult.result,
+                breakdown: damageResult.breakdown
+            },
+            damage_pending: false
+        }
+
+        const { error } = await supabase.from('messages').update({
+            content: JSON.stringify(payload)
+        }).eq('id', messageId)
+
+        if (error) console.error('Error updating damage roll:', error)
+        rolling.value = false
+    }
+
+    async function sendSpellMessage(spell: SpellData): Promise<string | null> {
+        if (rolling.value) return null
+        rolling.value = true
+
+        const isWhisper = recipientId.value !== 'all'
+        let attackResult = null
+
+        if (spell.isAttack && spell.attackFormula) {
+            attackResult = evaluateFormula(spell.attackFormula)
+        }
+
+        const payload: any = {
+            label: spell.title,
+            spell_level: spell.spellLevel,
+            school: spell.school,
+            description: spell.description,
+            is_attack: spell.isAttack || false,
+        }
+
+        if (spell.isAttack && spell.attackFormula && spell.damageFormula) {
+            payload.attack = attackResult ? {
+                formula: spell.attackFormula,
+                result: attackResult.result,
+                breakdown: attackResult.breakdown
+            } : null
+            payload.damage = null
+            payload.damage_formula = spell.damageFormula
+            payload.damage_pending = true
+        } else if (spell.rollFormula) {
+            payload.has_roll = true
+            payload.roll = null
+            payload.roll_formula = spell.rollFormula
+            payload.roll_pending = true
+        }
+
+        if (isWhisper) {
+            payload.target_id = recipientId.value
+            payload.is_roll = true
+        }
+
+        const content = JSON.stringify(payload)
+
+        const { data, error } = await supabase.from('messages').insert({
+            campaign_id: campaignId,
+            user_id: authStore.user?.id ?? null,
+            sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
+            content,
+            type: isWhisper ? 'whisper' : 'spell',
+        }).select('id').single()
+
+        if (error) console.error('Error sending spell message:', error)
+
+        rolling.value = false
+        return data?.id || null
+    }
+
+    async function rollSpellEffect(messageId: string, formula: string, isAttack: boolean): Promise<void> {
+        if (rolling.value) return
+        rolling.value = true
+
+        const { data: msgToUpdate, error: fetchError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('id', messageId)
+            .single()
+
+        if (fetchError || !msgToUpdate) {
+            console.error('Could not find message to update for spell roll', fetchError)
+            rolling.value = false
+            return
+        }
+
+        let parsedContent
+        try {
+            parsedContent = JSON.parse(msgToUpdate.content)
+        } catch {
+            rolling.value = false
+            return
+        }
+
+        const effectResult = evaluateFormula(formula)
+        let payload = { ...parsedContent }
+
+        if (isAttack) {
+            payload.damage = {
+                formula: formula,
+                result: effectResult.result,
+                breakdown: effectResult.breakdown
+            }
+            payload.damage_pending = false
+        } else {
+            payload.roll = {
+                formula: formula,
+                result: effectResult.result,
+                breakdown: effectResult.breakdown
+            }
+            payload.roll_pending = false
+        }
+
+        const { error } = await supabase.from('messages').update({
+            content: JSON.stringify(payload)
+        }).eq('id', messageId)
+
+        if (error) console.error('Error updating spell effect roll:', error)
+        rolling.value = false
+    }
+
+    async function deleteMessage(messageId: string): Promise<boolean> {
+        const { error } = await supabase.from('messages').delete().eq('id', messageId)
+        if (error) {
+            console.error('Error deleting message:', error)
+            return false
+        }
+        return true
     }
 
     return {
         rolling,
         sendRoll,
-        sendDualRoll,
+        sendAttackRoll,
+        rollDamage,
+        sendSpellMessage,
+        rollSpellEffect,
         evaluateFormula,
+        deleteMessage,
         modStr
     }
 }

@@ -17,12 +17,15 @@ export interface CharacterAttributes {
 
 export const useWizardStore = defineStore('wizard', () => {
     const currentStep = ref(1)
-    const totalSteps = 3
+    const totalSteps = 5
 
     const character = ref({
+        sheetType: 'Personagem',
         name: '',
         race: '',
         class: '',
+        customHitDie: 8,
+        customSkillPoints: 2,
         level: 1,
         avatar_url: '',
         attributes: {
@@ -41,7 +44,18 @@ export const useWizardStore = defineStore('wizard', () => {
         bio: '',
         alignment: '',
         deity: '',
-        size: 'Medium',
+        size: 'Médio',
+        hp_max: 0,
+        bab: 0,
+        speed: 9,
+        save_fort: 0,
+        save_ref: 0,
+        save_will: 0,
+        ca_armor: 0,
+        ca_shield: 0,
+        ca_natural: 0,
+        ca_deflect: 0,
+        initiative_misc: 0,
         age: '',
         gender: '',
         height: '',

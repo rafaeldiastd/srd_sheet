@@ -2,28 +2,59 @@
 import { useWizardStore } from '@/stores/wizardStore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import BasicInfoStep from '@/components/wizard/steps/BasicInfoStep.vue'
 import AttributesStep from '@/components/wizard/steps/AttributesStep.vue'
 import SkillsStep from '@/components/wizard/steps/SkillsStep.vue'
+import CombatStatsStep from '@/components/wizard/steps/CombatStatsStep.vue'
+import TypeStep from '@/components/wizard/steps/TypeStep.vue'
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-vue-next'
 
 const store = useWizardStore()
 const router = useRouter()
+const route = useRoute()
 
-const steps = [
-  { label: 'Informações', short: 'Info' },
-  { label: 'Atributos', short: 'Attrs' },
-  { label: 'Perícias', short: 'Perícias' },
+const allSteps = [
+  { id: 'type', label: 'Tipo', short: 'Tipo' },
+  { id: 'info', label: 'Informações', short: 'Info' },
+  { id: 'attrs', label: 'Atributos', short: 'Attrs' },
+  { id: 'skills', label: 'Perícias', short: 'Perícias' },
+  { id: 'combat', label: 'Combate', short: 'Combate' },
 ]
 
-const currentStepLabel = computed(() => steps[store.currentStep - 1]?.label)
-const isLast = computed(() => store.currentStep === store.totalSteps)
+const visibleSteps = computed(() => allSteps)
+
+// Auto-clamp step if type changes and shrinks available steps
+watch(() => visibleSteps.value.length, (newLen) => {
+  if (store.currentStep > newLen) {
+    store.setStep(newLen)
+  }
+})
+
+const currentStepLabel = computed(() => visibleSteps.value[store.currentStep - 1]?.label)
+const isLast = computed(() => store.currentStep === visibleSteps.value.length)
+
+function handleNext() {
+  if (store.currentStep < visibleSteps.value.length) {
+    store.setStep(store.currentStep + 1)
+  }
+}
+
+function handlePrev() {
+  if (store.currentStep > 1) {
+    store.setStep(store.currentStep - 1)
+  }
+}
 
 function handleCancel() {
   if (confirm('Tem certeza que deseja cancelar? O progresso será perdido.')) {
-    router.push('/dashboard')
+    const campaignId = route.query.campaignId
+    if (campaignId) {
+      router.push(`/campaign/${campaignId}`)
+    } else {
+      router.push('/dashboard')
+    }
   }
 }
 
@@ -34,10 +65,13 @@ async function handleFinish() {
     return
   }
 
+  const campaignId = route.query.campaignId as string | undefined
+
   const { error } = await import('@/lib/supabase').then(m => m.supabase
     .from('sheets')
     .insert({
       user_id: user.id,
+      campaign_id: campaignId || null,
       name: store.character.name,
       class: store.character.class,
       level: store.character.level,
@@ -50,7 +84,11 @@ async function handleFinish() {
     return
   }
 
-  router.push('/dashboard')
+  if (campaignId) {
+    router.push(`/campaign/${campaignId}`)
+  } else {
+    router.push('/dashboard')
+  }
 }
 </script>
 
@@ -63,7 +101,7 @@ async function handleFinish() {
         <div>
           <h1 class="text-3xl font-serif font-bold text-primary">Criar Personagem</h1>
           <p class="text-muted-foreground text-sm mt-1">
-            Passo {{ store.currentStep }} de {{ store.totalSteps }}: <span class="text-foreground font-medium">{{
+            Passo {{ store.currentStep }} de {{ visibleSteps.length }}: <span class="text-foreground font-medium">{{
               currentStepLabel }}</span>
           </p>
         </div>
@@ -77,9 +115,9 @@ async function handleFinish() {
         <!-- Progress line -->
         <div class="absolute inset-x-0 top-4 h-px bg-border -z-10"></div>
         <div class="absolute left-0 top-4 h-px bg-primary -z-10 transition-all duration-500"
-          :style="{ width: `${((store.currentStep - 1) / (store.totalSteps - 1)) * 100}%` }"></div>
+          :style="{ width: `${((store.currentStep - 1) / (visibleSteps.length - 1)) * 100}%` }"></div>
 
-        <button v-for="(step, i) in steps" :key="i" @click="store.setStep(i + 1)"
+        <button v-for="(step, i) in visibleSteps" :key="i" @click="store.setStep(i + 1)"
           class="flex flex-col items-center gap-2 cursor-pointer group">
           <div
             class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 bg-background transition-all duration-300"
@@ -106,20 +144,22 @@ async function handleFinish() {
 
         <CardContent class="p-6 min-h-[460px]">
           <Transition name="slide" mode="out-in">
-            <div :key="store.currentStep">
-              <BasicInfoStep v-if="store.currentStep === 1" />
-              <AttributesStep v-else-if="store.currentStep === 2" />
-              <SkillsStep v-else-if="store.currentStep === 3" />
+            <div :key="visibleSteps[store.currentStep - 1]?.id || store.currentStep">
+              <TypeStep v-if="visibleSteps[store.currentStep - 1]?.id === 'type'" />
+              <BasicInfoStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'info'" />
+              <AttributesStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'attrs'" />
+              <SkillsStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'skills'" />
+              <CombatStatsStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'combat'" />
             </div>
           </Transition>
         </CardContent>
 
         <CardFooter class="border-t border-border bg-card flex justify-between p-6">
-          <Button variant="outline" @click="store.prevStep" :disabled="store.currentStep === 1" class="gap-2">
+          <Button variant="outline" @click="handlePrev" :disabled="store.currentStep === 1" class="gap-2">
             <ChevronLeft class="w-4 h-4" /> Anterior
           </Button>
           <div class="flex gap-2">
-            <Button v-if="!isLast" @click="store.nextStep" class="gap-2">
+            <Button v-if="!isLast" @click="handleNext" class="gap-2">
               Próximo
               <ChevronRight class="w-4 h-4" />
             </Button>

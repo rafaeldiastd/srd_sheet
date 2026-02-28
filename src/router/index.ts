@@ -7,8 +7,7 @@ const router = createRouter({
     routes: [
         {
             path: '/',
-            name: 'home',
-            component: HomeView
+            redirect: '/login'
         },
         {
             path: '/login',
@@ -17,8 +16,7 @@ const router = createRouter({
         },
         {
             path: '/register',
-            name: 'register',
-            component: () => import('../views/RegisterView.vue')
+            redirect: '/login'
         },
         {
             path: '/dashboard',
@@ -64,7 +62,7 @@ router.beforeEach(async (to, _from) => {
 
     if (to.meta.requiresAuth && !isAuthenticated) {
         return '/login'
-    } else if ((to.name === 'login' || to.name === 'register') && isAuthenticated) {
+    } else if (to.name === 'login' && isAuthenticated) {
         return '/dashboard'
     }
 })

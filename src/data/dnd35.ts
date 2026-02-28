@@ -56,6 +56,13 @@ export const CLASS_SKILLS: Record<string, string[]> = {
     'Ladino': ['Avaliação', 'Equilíbrio', 'Blefar', 'Escalar', 'Ofícios', 'Decifrar Escrita', 'Diplomacia', 'Operar Mecanismo', 'Disfarces', 'Arte da Fuga', 'Falsificação', 'Obter Informação', 'Esconder-se', 'Intimidação', 'Saltar', 'Ouvir', 'Furtividade', 'Abrir Fechaduras', 'Atuação', 'Profissão', 'Procurar', 'Sentir Motivação', 'Prestidigitação', 'Observar', 'Natação', 'Acrobacia', 'Usar Instrumento Mágico', 'Usar Cordas'],
     'Feiticeiro': ['Blefar', 'Concentração', 'Ofícios', 'Conhecimento (Arcano)', 'Profissão', 'Identificar Magia'],
     'Mago': ['Concentração', 'Ofícios', 'Decifrar Escrita', 'Conhecimento (Arcano)', 'Conhecimento (Arquitetura e Engenharia)', 'Conhecimento (Dungeons)', 'Conhecimento (Geografia)', 'Conhecimento (História)', 'Conhecimento (Local)', 'Conhecimento (Natureza)', 'Conhecimento (Nobreza e Realeza)', 'Conhecimento (Religião)', 'Conhecimento (Os Planos)', 'Profissão', 'Identificar Magia'],
+    'Bruxo': ['Blefar', 'Concentração', 'Ofícios', 'Disfarces', 'Intimidação', 'Saltar', 'Conhecimento (Arcano)', 'Conhecimento (Os Planos)', 'Conhecimento (Religião)', 'Profissão', 'Sentir Motivação', 'Identificar Magia', 'Usar Instrumento Mágico'],
+    'Assassino': ['Acrobacia', 'Arte da Fuga', 'Blefar', 'Decifrar Escrita', 'Diplomacia', 'Disfarces', 'Equilíbrio', 'Esconder-se', 'Falsificação', 'Furtividade', 'Intimidação', 'Observar', 'Obter Informação', 'Ouvir', 'Prestidigitação', 'Procurar', 'Sentir Motivação', 'Usar Cordas', 'Usar Instrumento Mágico'],
+    'Algoz': ['Adestrar Animais', 'Cavalgar', 'Concentração', 'Conhecimento (Religião)', 'Cura', 'Diplomacia', 'Esconder-se', 'Intimidação', 'Ofícios', 'Profissão'],
+    'Defensor Anão': ['Adestrar Animais', 'Avaliação', 'Cavalgar', 'Ouvir', 'Sentir Motivação', 'Sobrevivência'],
+    'Dançarino das Sombras': ['Acrobacia', 'Arte da Fuga', 'Atuação', 'Blefar', 'Decifrar Escrita', 'Diplomacia', 'Disfarces', 'Equilíbrio', 'Esconder-se', 'Furtividade', 'Observar', 'Ouvir', 'Prestidigitação', 'Procurar', 'Saltar', 'Usar Cordas'],
+    'Mestre do Conhecimento': ['Concentração', 'Conhecimento (Todos)', 'Avaliação', 'Cura', 'Decifrar Escrita', 'Falsificação', 'Identificar Magia', 'Prestidigitação'],
+    'Teurgo Místico': ['Concentração', 'Conhecimento (Arcano)', 'Conhecimento (Religião)', 'Decifrar Escrita', 'Identificar Magia']
 }
 
 export const CLASS_SKILL_POINTS: Record<string, number> = {
@@ -70,6 +77,13 @@ export const CLASS_SKILL_POINTS: Record<string, number> = {
     'Ladino': 8,
     'Feiticeiro': 2,
     'Mago': 2,
+    'Bruxo': 2,
+    'Assassino': 4,
+    'Algoz': 2,
+    'Defensor Anão': 2,
+    'Dançarino das Sombras': 6,
+    'Mestre do Conhecimento': 4,
+    'Teurgo Místico': 2
 }
 
 export const CLASS_HIT_DICE: Record<string, number> = {
@@ -84,6 +98,13 @@ export const CLASS_HIT_DICE: Record<string, number> = {
     'Ladino': 6,
     'Feiticeiro': 4,
     'Mago': 4,
+    'Bruxo': 6,
+    'Assassino': 6,
+    'Algoz': 10,
+    'Defensor Anão': 12,
+    'Dançarino das Sombras': 8,
+    'Mestre do Conhecimento': 4,
+    'Teurgo Místico': 4
 }
 
 export interface Feat {
