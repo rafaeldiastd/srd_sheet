@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Package, Plus, Trash2, Backpack, ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -10,6 +10,8 @@ const props = defineProps<{
   onDelete: (type: string, index: number) => void
   onToggleEquipped: (i: number) => void
 }>()
+
+const equipmentList = computed(() => (props.d?.equipment || []) as any[])
 
 const expanded = ref<Set<number>>(new Set())
 function toggleExpand(i: number) {
@@ -33,7 +35,7 @@ function toggleExpand(i: number) {
     </div>
 
     <div class="space-y-2">
-      <div v-for="(item, i) in d?.equipment" :key="i"
+      <div v-for="(item, i) in equipmentList" :key="i"
         class="group rounded-xl border bg-zinc-950/60 overflow-hidden transition-all duration-200 hover:border-zinc-700"
         :class="item.equipped ? 'border-primary/30 bg-primary/5' : 'border-zinc-800'">
         <div class="flex items-center gap-3 px-4 py-3">
@@ -78,7 +80,7 @@ function toggleExpand(i: number) {
         </div>
       </div>
 
-      <div v-if="!d?.equipment?.length" class="text-center py-12 text-zinc-600 text-sm">
+      <div v-if="!equipmentList.length" class="text-center py-12 text-zinc-600 text-sm">
         Nenhum item no inventário.
       </div>
     </div>

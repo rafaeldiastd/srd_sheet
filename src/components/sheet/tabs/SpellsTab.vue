@@ -68,7 +68,7 @@ function getSlotSpellTitle(level: number, slotIdx: number): string {
   return props.preparedSpells[level]?.[slotIdx] ?? ''
 }
 
-function handlePreparedRoll(spellTitle: string, spell: any) {
+function handlePreparedRoll(_spellTitle: string, spell: any) {
   if (spell) props.onSpellRoll(spell)
 }
 

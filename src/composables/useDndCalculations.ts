@@ -4,9 +4,9 @@ import { defaultBonuses } from '@/lib/sheetDefaults'
 
 export function useDndCalculations(
     d: ComputedRef<SheetData | null | undefined>,
-    editMode: ComputedRef<boolean>,
-    editedData: Ref<SheetData | null>,
-    sheet: Ref<any>
+    _editMode: ComputedRef<boolean>,
+    _editedData: Ref<SheetData | null>,
+    _sheet: Ref<any>
 ) {
     function calcMod(n: number) { return Math.floor((n - 10) / 2) }
     function modStr(n: number) { return n >= 0 ? `+${n}` : `${n}` }
