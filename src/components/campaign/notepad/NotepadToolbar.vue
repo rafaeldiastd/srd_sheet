@@ -47,7 +47,7 @@
       </template>
       <template v-else>
         <Check class="w-3 h-3 text-green-500" />
-        Salvo ✓
+        Salvo 
       </template>
     </div>
   </div>

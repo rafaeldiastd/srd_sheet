@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { Sword, Dice5 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import ChatRollResult from './ChatRollResult.vue'
@@ -19,10 +19,10 @@ const emit = defineEmits<{
 </script>
 
 <template>
-    <div class="space-y-2">
-        <div class="flex items-center gap-2 font-bold" :class="isWhisper ? 'text-fuchsia-400' : 'text-amber-500'">
-            <Sword class="w-4 h-4" />
-            <span>{{ label }}</span>
+    <div class="space-y-1">
+        <div class="flex items-center gap-2 font-bold" :class="isWhisper ? 'text-fuchsia-400/90' : 'text-foreground'">
+            <Sword class="w-4 h-4 text-primary/60" />
+            <span class="text-xs uppercase tracking-wider">{{ label }}</span>
         </div>
 
         <ChatRollResult title="Acerto" :formula="attack.formula" :breakdown="attack.breakdown" :result="attack.result" :color-scheme="isWhisper ? 'fuchsia' : 'amber'" />
@@ -40,7 +40,7 @@ const emit = defineEmits<{
             </div>
         </template>
         <template v-else-if="damage">
-            <ChatRollResult title="Dano 💥" :formula="damage.formula" :breakdown="damage.breakdown" :result="damage.result" color-scheme="red" />
+            <ChatRollResult title="Dano " :formula="damage.formula" :breakdown="damage.breakdown" :result="damage.result" color-scheme="red" />
         </template>
     </div>
 </template>

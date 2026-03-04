@@ -19,7 +19,7 @@ export interface RollContext {
     d: ComputedRef<any>
     onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
     onAttackRoll?: (label: string, attackFormula: string, damageFormula: string) => void
-    onSpellRoll?: (spell: any) => void
+    onShowDescription?: (title: string, description: string) => void
 }
 
 const FORMULA_RE = /@(\w+)/g
@@ -76,19 +76,19 @@ export function useRolls(ctx: RollContext) {
     function handleItemRoll(item: any) {
         if (typeof item === 'string') return
 
-        if (item.isAttack && ctx.onAttackRoll && item.attackFormula && item.damageFormula) {
-            let atkDisplay = item.attackFormula
-            let dmgDisplay = item.damageFormula
+        if (item.isAttack && ctx.onAttackRoll) {
+            const atkF = item.attackFormula || '1d20 + @BBA'
+            const dmgF = item.damageFormula || '1d8'
 
+            let atkDisplay = atkF
             const bonus = Number(item.attackBonus) || 0
             if (bonus) {
                 const bonusStr = bonus >= 0 ? `+${bonus}` : `${bonus}`
                 atkDisplay = `${atkDisplay} ${bonusStr}`
             }
 
-            // Resolve @refs and sanitize so DiceRoller can evaluate the formulas
             const atkEval = sanitizeFormula(resolveFormula(atkDisplay))
-            const dmgEval = sanitizeFormula(resolveFormula(dmgDisplay))
+            const dmgEval = sanitizeFormula(resolveFormula(dmgF))
 
             ctx.onAttackRoll(item.title, atkEval, dmgEval)
         } else {
@@ -96,40 +96,14 @@ export function useRolls(ctx: RollContext) {
         }
     }
 
-    function sendSpellToChat(spell: any) {
-        if (!ctx.onRoll) return
-        const title = typeof spell === 'string' ? spell : spell.title
-        const desc = typeof spell === 'string' ? '' : spell.description
-        const formula = typeof spell === 'string' ? '' : spell.rollFormula
-
-        let content = `**Magia: ${title}**`
-        if (spell.school) content += ` (${spell.school})`
-        content += `\n`
-        if (spell.spellLevel !== undefined) content += `*Nível ${spell.spellLevel}*\n`
-        if (spell.castingTime) content += `**Execução:** ${spell.castingTime} | `
-        if (spell.range) content += `**Alcance:** ${spell.range}\n`
-        if (spell.target) content += `**Alvo:** ${spell.target} | `
-        if (spell.duration) content += `**Duração:** ${spell.duration}\n`
-        if (spell.savingThrow) content += `**Resistência:** ${spell.savingThrow} | `
-        if (spell.spellResist) content += `**RM:** ${spell.spellResist}\n`
-        if (desc) content += `\n${resolveFormula(desc)}`
-
-        if (ctx.onSpellRoll) {
-            // Resolve @ref tokens in formulas before dispatching to the chat roller
-            const resolvedSpell = { ...spell }
-            if (spell.attackFormula) resolvedSpell.attackFormula = sanitizeFormula(resolveFormula(spell.attackFormula))
-            if (spell.damageFormula) resolvedSpell.damageFormula = sanitizeFormula(resolveFormula(spell.damageFormula))
-            if (spell.rollFormula) resolvedSpell.rollFormula = sanitizeFormula(resolveFormula(spell.rollFormula))
-            ctx.onSpellRoll(resolvedSpell)
-            return
-        }
-
-        if (formula) {
-            handleRoll(title, formula)
-        } else {
-            ctx.onRoll(content, '', '')
+    function handleShowDescription(title: string, description: string) {
+        if (!description) return
+        if (ctx.onShowDescription) {
+            ctx.onShowDescription(title, description)
+        } else if (ctx.onRoll) {
+            ctx.onRoll(title, description)
         }
     }
 
-    return { resolveFormula, handleRoll, handleItemRoll, sendSpellToChat }
+    return { resolveFormula, handleRoll, handleItemRoll, handleShowDescription }
 }

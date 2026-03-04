@@ -1,10 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Sword, Sparkles, Zap, Activity, BookOpen, Dices } from 'lucide-vue-next'
+import { Sword, Zap, Activity, Dices } from 'lucide-vue-next'
 
 const props = defineProps<{ campaignId: string }>()
 
@@ -60,11 +60,6 @@ const skills = computed(() => {
 })
 
 const attacks = computed(() => sheetData.value?.shortcuts ?? [])
-const spells = computed(() =>
-    (sheetData.value?.spells ?? []).filter((s: any) =>
-        typeof s !== 'string' && s.rollFormula
-    )
-)
 
 const ATTR_LABELS: Record<string, string> = {
     str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR'
@@ -82,9 +77,6 @@ async function rollInitiative() {
 }
 
 
-async function rollSpell(spell: any) {
-    await sendRoll(spell.title || 'Magia', spell.rollFormula)
-}
 
 async function rollSkill(skill: { name: string; total: number }) {
     const formula = `1d20${modStr(skill.total)}`
@@ -95,9 +87,9 @@ onMounted(fetchMySheet)
 </script>
 
 <template>
-    <div class="flex flex-col h-full bg-zinc-950/80 border-r border-border w-64 shrink-0">
+    <div class="flex flex-col h-full bg-card/80 border-r border-border w-64 shrink-0">
         <!-- Header -->
-        <div class="p-3 border-b border-border bg-zinc-900/60 shrink-0">
+        <div class="p-3 border-b border-border bg-muted/60 shrink-0">
             <div class="flex items-center gap-2">
                 <Dices class="w-4 h-4 text-primary" />
                 <h3 class="text-sm font-bold">Rolagem de Dados</h3>
@@ -105,7 +97,7 @@ onMounted(fetchMySheet)
             <p v-if="sheet" class="text-xs text-muted-foreground mt-0.5 truncate">
                 {{ sheet.name }} — {{ sheet.class }} {{ sheet.level }}
             </p>
-            <p v-else-if="!loading" class="text-xs text-zinc-600 italic mt-0.5">Sem ficha vinculada</p>
+            <p v-else-if="!loading" class="text-xs text-muted-foreground/60 italic mt-0.5">Sem ficha vinculada</p>
         </div>
 
         <!-- Loading -->
@@ -115,7 +107,7 @@ onMounted(fetchMySheet)
 
         <!-- No Sheet -->
         <div v-else-if="!sheet" class="flex-1 flex flex-col items-center justify-center gap-3 p-4 text-center">
-            <Dices class="w-10 h-10 text-zinc-700" />
+            <Dices class="w-10 h-10 text-muted-foreground/40" />
             <p class="text-xs text-muted-foreground">
                 Vincule uma ficha à campanha para rolar dados aqui.
             </p>
@@ -131,9 +123,6 @@ onMounted(fetchMySheet)
                     <TabsTrigger value="attacks" class="text-[10px] px-1" title="Ataques">
                         <Sword class="w-3 h-3" />
                     </TabsTrigger>
-                    <TabsTrigger value="spells" class="text-[10px] px-1" title="Magias">
-                        <Sparkles class="w-3 h-3" />
-                    </TabsTrigger>
                     <TabsTrigger value="skills" class="text-[10px] px-1" title="Perícias">
                         <Zap class="w-3 h-3" />
                     </TabsTrigger>
@@ -141,11 +130,11 @@ onMounted(fetchMySheet)
 
                 <!-- INITIATIVE -->
                 <TabsContent value="initiative" class="p-3 space-y-3">
-                    <div class="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-center">
+                    <div class="rounded-lg bg-muted border border-border p-4 text-center">
                         <p class="text-xs text-muted-foreground mb-1">Bônus de Iniciativa</p>
                         <p class="text-3xl font-bold text-primary">{{ initiative >= 0 ? `+${initiative}` : initiative }}
                         </p>
-                        <p class="text-xs text-zinc-600 mt-1">DES {{ modStr(attrMod('dex')) }}</p>
+                        <p class="text-xs text-muted-foreground/60 mt-1">DES {{ modStr(attrMod('dex')) }}</p>
                     </div>
                     <Button class="w-full gap-2" :disabled="rolling" @click="rollInitiative">
                         <Dices class="w-4 h-4" /> Rolar Iniciativa (1d20{{ modStr(initiative) }})
@@ -156,7 +145,7 @@ onMounted(fetchMySheet)
                         <p class="text-[10px] text-muted-foreground uppercase font-bold px-1">Atributos</p>
                         <div class="grid grid-cols-2 gap-1">
                             <button v-for="attr in (['str', 'dex', 'con', 'int', 'wis', 'cha'] as const)" :key="attr"
-                                class="p-2 rounded bg-zinc-900 border border-zinc-800 hover:border-primary/50 transition-colors text-center"
+                                class="p-2 rounded bg-muted border border-border hover:border-primary/50 transition-colors text-center"
                                 :disabled="rolling"
                                 @click="sendRoll(ATTR_LABELS[attr] || attr.toUpperCase(), `1d20${modStr(attrMod(attr))}`)">
                                 <p class="text-[9px] text-muted-foreground uppercase font-bold">{{ ATTR_LABELS[attr] ||
@@ -174,8 +163,8 @@ onMounted(fetchMySheet)
                         atalho de ataque.</div>
                     <div v-else class="space-y-2">
                         <div v-for="(sc, i) in attacks" :key="i"
-                            class="rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors p-3">
-                            <p class="text-xs font-bold text-zinc-200 mb-2">{{ sc.title }}</p>
+                            class="rounded-lg bg-muted border border-border hover:border-border transition-colors p-3">
+                            <p class="text-xs font-bold text-foreground mb-2">{{ sc.title }}</p>
                             <div class="flex gap-1.5 flex-wrap">
                                 <Button v-if="sc.attackBonus !== undefined && sc.attackBonus !== ''" size="sm"
                                     variant="outline"
@@ -194,40 +183,15 @@ onMounted(fetchMySheet)
                     </div>
                 </TabsContent>
 
-                <!-- SPELLS -->
-                <TabsContent value="spells" class="p-3">
-                    <div v-if="!spells.length" class="text-center py-8 text-xs text-muted-foreground italic">Nenhuma
-                        magia com fórmula de rolagem.</div>
-                    <div v-else class="space-y-2">
-                        <div v-for="(spell, i) in spells" :key="i"
-                            class="rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors p-3">
-                            <div class="flex items-start justify-between gap-2 mb-2">
-                                <div>
-                                    <p class="text-xs font-bold text-zinc-200">{{ spell.title }}</p>
-                                    <span
-                                        class="text-[9px] bg-zinc-800 border border-zinc-700 text-muted-foreground rounded px-1 py-0.5">
-                                        {{ spell.spellLevel === 0 ? 'Truque' : `Nível ${spell.spellLevel}` }}
-                                    </span>
-                                </div>
-                                <Button size="sm" variant="outline"
-                                    class="h-7 shrink-0 text-xs gap-1.5 border-blue-900/50 text-blue-400 hover:bg-blue-950/30"
-                                    :disabled="rolling" @click="rollSpell(spell)">
-                                    <BookOpen class="w-3 h-3" /> {{ spell.rollFormula }}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </TabsContent>
-
                 <!-- SKILLS -->
                 <TabsContent value="skills" class="p-3">
                     <div v-if="!skills.length" class="text-center py-8 text-xs text-muted-foreground italic">Nenhuma
                         perícia com graduações.</div>
                     <div v-else class="space-y-1">
                         <button v-for="skill in skills" :key="skill.name"
-                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-primary/50 transition-colors group"
+                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-muted border border-border hover:border-primary/50 transition-colors group"
                             :disabled="rolling" @click="rollSkill(skill)">
-                            <span class="text-xs font-medium text-zinc-300 group-hover:text-foreground">{{ skill.name
+                            <span class="text-xs font-medium text-foreground/80 group-hover:text-foreground">{{ skill.name
                                 }}</span>
                             <span class="text-xs font-bold tabular-nums"
                                 :class="skill.total >= 0 ? 'text-primary' : 'text-muted-foreground'">

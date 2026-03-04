@@ -12,7 +12,7 @@ export function useSheetEdit(sheet: Ref<Sheet | null>, onSave: (data: SheetData)
         const copy = JSON.parse(JSON.stringify(sheet.value.data))
         if (!copy.bonuses) copy.bonuses = defaultBonuses()
         if (!copy.feats) copy.feats = []
-        if (!copy.spells) copy.spells = []
+
         if (!copy.shortcuts) copy.shortcuts = []
         if (copy.xp === undefined) copy.xp = 0
         if (!copy.buffs) copy.buffs = []
@@ -20,12 +20,8 @@ export function useSheetEdit(sheet: Ref<Sheet | null>, onSave: (data: SheetData)
         editedData.value = copy
     }
 
-    async function saveEdit(spellSlotsMax?: any, spellSlotsUsed?: any) {
+    async function saveEdit() {
         if (!editedData.value || !sheet.value) return
-
-        // Persist spell slots as part of sheet data
-        if (spellSlotsMax) editedData.value.spellSlotsMax = { ...spellSlotsMax }
-        if (spellSlotsUsed) editedData.value.spellSlotsUsed = { ...spellSlotsUsed }
 
         // Sync live-saved fields (HP, Recursos, Atalhos) back so they aren't overwritten
         if (sheet.value.data) {

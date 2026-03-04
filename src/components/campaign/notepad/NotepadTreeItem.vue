@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div
     :draggable="true"
     @dragstart.stop="onDragStart"
@@ -40,18 +40,18 @@
           <MoreVertical class="w-4 h-4" />
         </button>
         
-        <div v-if="showMenu" class="absolute right-0 top-full mt-1 w-48 rounded-md bg-zinc-950 border border-zinc-800 shadow-lg py-1 z-[60] overflow-hidden" @click.stop>
-          <button v-if="node.item.is_folder" @click="handleAction('create-note')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+        <div v-if="showMenu" class="absolute right-0 top-full mt-1 w-48 rounded-md bg-card border border-border shadow-lg py-1 z-[60] overflow-hidden" @click.stop>
+          <button v-if="node.item.is_folder" @click="handleAction('create-note')" class="w-full text-left px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-white flex items-center">
             <FileText class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Nova nota aqui
           </button>
-          <button v-if="node.item.is_folder" @click="handleAction('create-folder')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+          <button v-if="node.item.is_folder" @click="handleAction('create-folder')" class="w-full text-left px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-white flex items-center">
             <FolderPlus class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Nova pasta aqui
           </button>
-          <div v-if="node.item.is_folder" class="h-px bg-zinc-800 my-1"></div>
-          <button @click="handleAction('rename')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+          <div v-if="node.item.is_folder" class="h-px bg-accent my-1"></div>
+          <button @click="handleAction('rename')" class="w-full text-left px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-white flex items-center">
             <Edit2 class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Renomear
           </button>
-          <div class="h-px bg-zinc-800 my-1"></div>
+          <div class="h-px bg-accent my-1"></div>
           <button @click="handleAction('delete')" class="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 flex items-center">
             <Trash2 class="w-3.5 h-3.5 mr-2" /> Excluir
           </button>

@@ -13,7 +13,13 @@ const newItem = ref('')
 
 function addItem() {
   if (newItem.value.trim()) {
-    store.character.equipment.push(newItem.value.trim())
+    store.character.equipment.push({
+      title: newItem.value.trim(),
+      description: '',
+      quantity: 1,
+      weight: 0,
+      equipped: false
+    })
     newItem.value = ''
   }
 }
@@ -34,7 +40,7 @@ function removeItem(index: number) {
       <div class="grid gap-2">
         <Card v-for="(item, index) in store.character.equipment" :key="index"
           class="p-3 flex justify-between items-center">
-          <span>{{ item }}</span>
+          <span>{{ item.title }}</span>
           <Button variant="ghost" size="icon" @click="removeItem(index)">
             <Trash2 class="h-4 w-4" />
           </Button>

@@ -57,7 +57,7 @@ const myAvatarUrl = computed(() => {
 
 const recipientId = ref('all')
 
-const { sendRoll, sendAttackRoll, sendSpellMessage } = useCampaignRolls(campaignId, myMemberName, recipientId, myAvatarUrl)
+const { sendRoll, sendAttackRoll, sendDescription } = useCampaignRolls(campaignId, myMemberName, recipientId, myAvatarUrl)
 
 async function fetchCampaign() {
     loading.value = true
@@ -178,6 +178,14 @@ function leaveCampaign() {
     }
 }
 
+function handleSheetDeleted(sheetId: string) {
+    mySheets.value = mySheets.value.filter(s => s.id !== sheetId)
+    if (selectedSheetId.value === sheetId) {
+        selectedSheetId.value = 'none'
+        localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, 'none')
+    }
+}
+
 onMounted(async () => {
     await fetchCampaign()
     await fetchMySheets()
@@ -204,7 +212,7 @@ onMounted(async () => {
         <main class="flex-1 flex flex-col min-w-0" :class="{ 'hidden lg:flex': showChat && !myCurrentSheetId }">
 
             <!-- Top Bar -->
-            <header class="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 bg-zinc-950/50">
+            <header class="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 bg-card/50">
                 <div class="flex items-center gap-2 sm:gap-3">
                     <Button variant="ghost" size="icon" @click="router.push('/dashboard')">
                         <Scroll class="w-5 h-5 text-muted-foreground" />
@@ -212,7 +220,7 @@ onMounted(async () => {
                     <div v-if="campaign" class="flex-1 min-w-0">
                         <h1 class="font-serif font-bold text-lg sm:text-xl truncate max-w-[120px] sm:max-w-xs">{{ campaign.name }}</h1>
                     </div>
-                    <div v-else class="h-6 w-24 sm:w-32 bg-zinc-800 animate-pulse rounded"></div>
+                    <div v-else class="h-6 w-24 sm:w-32 bg-muted animate-pulse rounded"></div>
                 </div>
 
                 <!-- Navigation Controls -->
@@ -264,7 +272,7 @@ onMounted(async () => {
 
                     <!-- DM: Join Code -->
                     <div v-if="campaign && isDM"
-                        class="hidden md:flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-md border border-zinc-800 h-8">
+                        class="hidden md:flex items-center gap-2 bg-card px-3 py-1 rounded-md border border-border h-8">
                         <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Código:</span>
                         <code class="text-xs font-mono text-primary font-bold">{{ campaign.join_code }}</code>
                         <button @click="copyJoinCode" class="text-muted-foreground hover:text-foreground">
@@ -305,15 +313,14 @@ onMounted(async () => {
                 />
 
                 <!-- Character Sheet (Center Panel) -->
-                <div class="flex-1 overflow-y-auto bg-background px-0 sm:px-4 lg:px-8 py-0 sm:py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700" 
+                <div class="flex-1 overflow-y-auto bg-background px-0 sm:px-4 lg:px-8 py-0 sm:py-4 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground" 
                      :class="{ 'hidden lg:block': showNotes || (showChat && !myCurrentSheetId) }">
                     <div v-if="myCurrentSheetId" class="h-full">
                         <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
-                            :on-attack-roll="sendAttackRoll"
-                            :on-spell-roll="sendSpellMessage" />
+                            :on-attack-roll="sendAttackRoll" :on-show-description="sendDescription" />
                     </div>
                     <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
-                        <FileText class="w-12 h-12 text-zinc-800" />
+                        <FileText class="w-12 h-12 text-muted" />
                         <h2 class="text-xl font-bold">Espectador</h2>
                         <p class="text-muted-foreground max-w-sm">Você está acompanhando a campanha sem uma ficha ativa. Use o botão no topo para selecionar ou criar uma ficha para rolar dados.</p>
                         <Button @click="showSheetSelector = true" class="mt-4">
@@ -330,6 +337,6 @@ onMounted(async () => {
 
         <!-- Modals -->
         <QuickNpcModal v-if="showNpcModal" @close="showNpcModal = false" @saved="handleNpcSaved" />
-        <SheetSelectorModal v-model="showSheetSelector" :sheets="mySheets" :active-sheet-id="selectedSheetId" @select-sheet="handleSheetSelected" />
+        <SheetSelectorModal v-model="showSheetSelector" :sheets="mySheets" :active-sheet-id="selectedSheetId" @select-sheet="handleSheetSelected" @sheet-deleted="handleSheetDeleted" />
     </div>
 </template>

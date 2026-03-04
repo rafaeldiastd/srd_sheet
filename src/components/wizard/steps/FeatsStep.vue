@@ -18,10 +18,18 @@ const filteredFeats = computed<Feat[]>(() => {
   )
 })
 
-function toggleFeat(featName: string) {
-  const index = store.character.feats.indexOf(featName)
+function isFeatSelected(featName: string) {
+  return store.character.feats.some(f => f.title === featName)
+}
+
+function toggleFeat(feat: Feat) {
+  const index = store.character.feats.findIndex(f => f.title === feat.name)
   if (index === -1) {
-    store.character.feats.push(featName)
+    store.character.feats.push({
+      title: feat.name,
+      description: feat.description,
+      requirements: feat.prerequisite
+    })
   } else {
     store.character.feats.splice(index, 1)
   }
@@ -67,8 +75,8 @@ const maxFeats = computed(() => {
     <div class="max-h-[500px] overflow-y-auto border rounded-md p-4 grid gap-2">
       <div v-for="feat in filteredFeats" :key="feat.name"
         class="flex items-start space-x-2 border-b pb-2 last:border-0 hover:bg-muted/10 transition-colors p-2 rounded">
-        <Checkbox :id="feat.name" :checked="store.character.feats.includes(feat.name)"
-          @update:checked="toggleFeat(feat.name)" />
+        <Checkbox :id="feat.name" :checked="isFeatSelected(feat.name)"
+          @update:checked="toggleFeat(feat)" />
         <div class="grid gap-1.5 leading-none">
           <Label :htmlFor="feat.name" class="font-bold cursor-pointer">
             {{ feat.name }}

@@ -34,32 +34,32 @@ const barColor = (cur: number, max: number) => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4">
+  <div class="rounded-xl border border-border bg-card/80 p-4">
     <div class="flex items-center gap-2 mb-3">
-      <Layers class="w-4 h-4 text-zinc-400" />
-      <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Recursos</span>
+      <Layers class="w-4 h-4 text-muted-foreground" />
+      <span class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Recursos</span>
     </div>
 
     <!-- Add form -->
-    <div v-if="showForm && editMode" class="flex gap-2 mb-3 p-2 bg-zinc-900/60 rounded-lg border border-zinc-800">
-      <input v-model="newName" placeholder="Nome (ex: Fúria)" class="flex-1 bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 placeholder-zinc-600 px-1" />
+    <div v-if="showForm && editMode" class="flex gap-2 mb-3 p-2 bg-muted/60 rounded-lg border border-border">
+      <input v-model="newName" placeholder="Nome (ex: Fúria)" class="flex-1 bg-transparent text-sm border-b border-border focus:border-primary focus:outline-none text-foreground placeholder-muted-foreground px-1" />
       <input v-model.number="newMax" type="number" min="1" placeholder="Máx"
-        class="w-14 text-center bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none" />
+        class="w-14 text-center bg-transparent text-sm border-b border-border focus:border-primary focus:outline-none text-foreground [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none" />
       <button @click="handleAdd" class="text-xs font-bold text-primary hover:text-primary/80 px-2 py-1 bg-primary/10 rounded-md border border-primary/20">
         Criar
       </button>
     </div>
 
-    <div v-if="!sheet.data?.resources?.length" class="text-center py-6 text-zinc-600 text-sm">
+    <div v-if="!sheet.data?.resources?.length" class="text-center py-6 text-muted-foreground text-sm">
       Nenhum recurso cadastrado.
     </div>
 
     <div class="space-y-3">
       <div v-for="(res, i) in sheet.data?.resources" :key="i" class="group">
         <div class="flex items-center justify-between mb-1">
-          <span class="text-sm font-bold text-zinc-300">{{ res.name || res.label }}</span>
+          <span class="text-sm font-bold text-foreground/80">{{ res.name || res.label }}</span>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-zinc-500">{{ res.current ?? res.max }} / {{ res.max }}</span>
+            <span class="text-xs text-muted-foreground">{{ res.current ?? res.max }} / {{ res.max }}</span>
             <button v-if="editMode" @click="onDelete(i)"
               class="opacity-0 group-hover:opacity-100 text-red-700 hover:text-red-500 transition-all">
               <Trash2 class="w-3 h-3" />
@@ -68,10 +68,10 @@ const barColor = (cur: number, max: number) => {
         </div>
         <div class="flex items-center gap-2">
           <button @click="onAdjust(i, -1)"
-            class="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors text-sm font-bold">
+            class="w-6 h-6 rounded bg-muted hover:bg-muted/80 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors text-sm font-bold">
             −
           </button>
-          <div class="flex-1 h-2.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div class="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
             <div class="h-full rounded-full transition-all duration-300"
               :style="{
                 width: res.max ? ((res.current ?? res.max) / res.max * 100) + '%' : '100%',
@@ -79,7 +79,7 @@ const barColor = (cur: number, max: number) => {
               }" />
           </div>
           <button @click="onAdjust(i, 1)"
-            class="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors text-sm font-bold">
+            class="w-6 h-6 rounded bg-muted hover:bg-muted/80 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors text-sm font-bold">
             +
           </button>
         </div>
@@ -87,9 +87,9 @@ const barColor = (cur: number, max: number) => {
     </div>
 
     <!-- Footer -->
-    <div class="mt-4 pt-3 border-t border-zinc-800/50 flex justify-end gap-2">
+    <div class="mt-4 pt-3 border-t border-border/50 flex justify-end gap-2">
       <button @click="onReset"
-        class="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800 rounded-lg px-2.5 py-1 hover:bg-zinc-800">
+        class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-lg px-2.5 py-1 hover:bg-muted">
         <RotateCcw class="w-3 h-3" /> Descanso
       </button>
       <button v-if="editMode" @click="showForm = !showForm"

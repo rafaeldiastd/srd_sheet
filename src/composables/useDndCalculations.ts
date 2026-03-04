@@ -1,4 +1,4 @@
-import { computed, type Ref, type ComputedRef } from 'vue'
+import { computed, type ComputedRef } from 'vue'
 import type { SheetData, Modifier } from '@/types/sheet'
 import { defaultBonuses } from '@/lib/sheetDefaults'
 
@@ -22,18 +22,24 @@ export function useDndCalculations(
         d.value?.feats?.forEach((f: any) => {
             if (typeof f === 'string') return
             f.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+            if (f.active) {
+                f.activeModifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+            }
         })
-        d.value?.spells?.forEach((s: any) => {
-            if (typeof s === 'string') return
-            s.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
-        })
+
         d.value?.shortcuts?.forEach((s: any) => {
             s.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+            if (s.active) {
+                s.activeModifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+            }
         })
         d.value?.equipment?.forEach((item: any) => {
             if (typeof item === 'string') return
             if (item.equipped) {
                 item.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+                if (item.active) {
+                    item.activeModifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
+                }
             }
         })
         return bonuses
@@ -64,22 +70,57 @@ export function useDndCalculations(
         return base + temp + buffBonus + configBonus
     }
 
+    const acData = computed(() => d.value?.ac)
+
     const totalCA = computed(() => {
         if (!d.value) return 10
-        return 10 + Number(d.value.ca_armor ?? 0) + calcMod(attrTotal('dex'))
-            + Number(d.value.ca_shield ?? 0) + Number(d.value.ca_natural ?? 0)
-            + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value)
-            + Number(totalBonuses.value['CA'] ?? 0) + Number(b.value?.ca ?? 0)
+        const base = 10
+        const armor = Number(acData.value?.armor ?? 0)
+        const shield = Number(acData.value?.shield ?? 0)
+        const natural = Number(acData.value?.natural ?? 0)
+        const deflection = Number(acData.value?.deflection ?? 0)
+        const size = Number(sizeMod.value)
+        const misc = Number(acData.value?.misc ?? 0)
+
+        let dexBonus = calcMod(attrTotal('dex'))
+        // Condition: Prone (-4 AC against ranged, but that's situational, usually handled by GM or specific UI)
+        // Here we can apply static penalties
+        if (d.value.conditions?.entangled) dexBonus -= 2
+
+        const buffBonus = Number(totalBonuses.value['CA'] ?? 0) + Number(b.value?.ca ?? 0)
+
+        return base + armor + shield + natural + deflection + size + misc + dexBonus + buffBonus
     })
 
     const totalTouch = computed(() => {
         if (!d.value) return 10
-        return 10 + calcMod(attrTotal('dex')) + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value) + Number(totalBonuses.value['toque'] ?? 0)
+        const base = 10
+        const deflection = Number(acData.value?.deflection ?? 0)
+        const size = Number(sizeMod.value)
+        const misc = Number(acData.value?.misc ?? 0)
+
+        let dexBonus = calcMod(attrTotal('dex'))
+        if (d.value.conditions?.entangled) dexBonus -= 2
+
+        const buffBonus = Number(totalBonuses.value['toque'] ?? 0)
+
+        return base + deflection + size + misc + dexBonus + buffBonus
     })
 
     const totalFlatFooted = computed(() => {
         if (!d.value) return 10
-        return 10 + Number(d.value.ca_armor ?? 0) + Number(d.value.ca_shield ?? 0) + Number(d.value.ca_natural ?? 0) + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value) + Number(totalBonuses.value['surpreso'] ?? 0)
+        const base = 10
+        const armor = Number(acData.value?.armor ?? 0)
+        const shield = Number(acData.value?.shield ?? 0)
+        const natural = Number(acData.value?.natural ?? 0)
+        const deflection = Number(acData.value?.deflection ?? 0)
+        const size = Number(sizeMod.value)
+        const misc = Number(acData.value?.misc ?? 0)
+
+        // No Dex bonus when flat-footed
+        const buffBonus = Number(totalBonuses.value['surpreso'] ?? 0)
+
+        return base + armor + shield + natural + deflection + size + misc + buffBonus
     })
 
     const totalBAB = computed(() => Number(d.value?.bab || 0) + Number(totalBonuses.value.bab || 0) + Number(b.value?.bab ?? 0))
@@ -107,7 +148,8 @@ export function useDndCalculations(
         if (!d.value?.equipment) return 0
         return d.value.equipment.reduce((sum: number, item: any) => {
             if (typeof item === 'string') return sum
-            return sum + (Number(item.weight) || 0)
+            const qty = Number(item.quantity) || 1
+            return sum + ((Number(item.weight) || 0) * qty)
         }, 0)
     })
 

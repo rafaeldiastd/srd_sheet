@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { Feat, Equipment } from '@/types/sheet'
 
 export interface Attribute {
     base: number
@@ -38,9 +39,8 @@ export const useWizardStore = defineStore('wizard', () => {
         } as CharacterAttributes,
         skills: {} as Record<string, number>,
         skillPoints: 0,
-        feats: [] as string[],
-        spells: [] as string[],
-        equipment: [] as string[],
+        feats: [] as Feat[],
+        equipment: [] as Equipment[],
         bio: '',
         alignment: '',
         deity: '',
@@ -55,6 +55,36 @@ export const useWizardStore = defineStore('wizard', () => {
         ca_shield: 0,
         ca_natural: 0,
         ca_deflect: 0,
+        ac: {
+            armor: 0,
+            shield: 0,
+            natural: 0,
+            deflection: 0,
+            size: 0,
+            misc: 0,
+            dexMod: 0,
+            total: 10,
+            touch: 10,
+            flatFooted: 10
+        },
+        conditions: {
+            blinded: false,
+            dazzled: false,
+            deafened: false,
+            entangled: false,
+            fatigued: false,
+            exhausted: false,
+            grappled: false,
+            helpless: false,
+            paralyzed: false,
+            pinned: false,
+            prone: false,
+            shaken: false,
+            sickened: false,
+            stunned: false,
+            unconscious: false,
+            invisible: false
+        },
         initiative_misc: 0,
         age: '',
         gender: '',
@@ -63,6 +93,7 @@ export const useWizardStore = defineStore('wizard', () => {
         eyes: '',
         hair: '',
         skin: '',
+        xp: 0,
     })
 
     function nextStep() {
@@ -83,12 +114,42 @@ export const useWizardStore = defineStore('wizard', () => {
         }
     }
 
+    function setFromFoundry(data: any) {
+        // Simple property assignment
+        Object.keys(data).forEach(key => {
+            if (['attributes', 'skills', 'feats', 'equipment', 'ac', 'conditions'].includes(key)) return;
+            if (key in character.value) {
+                (character.value as any)[key] = data[key]
+            }
+        })
+
+        // Object merges
+        if (data.attributes) {
+            Object.keys(data.attributes).forEach(attr => {
+                if (attr in character.value.attributes) {
+                    (character.value.attributes as any)[attr] = { ...data.attributes[attr] }
+                }
+            })
+        }
+        if (data.skills) character.value.skills = { ...data.skills }
+        if (data.ac) character.value.ac = { ...data.ac }
+        if (data.conditions) character.value.conditions = { ...data.conditions }
+
+        if (data.feats && Array.isArray(data.feats)) {
+            character.value.feats = [...data.feats]
+        }
+        if (data.equipment && Array.isArray(data.equipment)) {
+            character.value.equipment = [...data.equipment]
+        }
+    }
+
     return {
         currentStep,
         totalSteps,
         character,
         nextStep,
         prevStep,
-        setStep
+        setStep,
+        setFromFoundry
     }
 })

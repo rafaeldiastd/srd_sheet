@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -13,53 +13,53 @@ const colorClasses = computed(() => {
     switch (props.colorScheme) {
         case 'red':
             return {
-                border: 'border-red-900/30',
-                title: 'text-red-500/70',
-                formula: 'text-red-500/50',
-                breakdown: 'text-red-500/80',
+                border: 'border-red-900/20 bg-red-950/10',
+                title: 'text-red-400/80',
+                formula: 'text-red-500/40',
+                breakdown: 'text-red-400/60',
                 result: 'text-red-400'
             }
         case 'fuchsia':
             return {
-                border: 'border-fuchsia-900/30',
-                title: 'text-fuchsia-500/70',
-                formula: 'text-fuchsia-500/60',
-                breakdown: 'text-fuchsia-500/90',
+                border: 'border-fuchsia-900/20 bg-fuchsia-950/10',
+                title: 'text-fuchsia-400/80',
+                formula: 'text-fuchsia-500/40',
+                breakdown: 'text-fuchsia-400/60',
                 result: 'text-fuchsia-300'
             }
         case 'emerald':
             return {
-                border: 'border-emerald-900/30',
-                title: 'text-emerald-500/70',
-                formula: 'text-emerald-500/50',
-                breakdown: 'text-emerald-500/80',
+                border: 'border-emerald-900/20 bg-emerald-950/10',
+                title: 'text-emerald-400/80',
+                formula: 'text-emerald-500/40',
+                breakdown: 'text-emerald-400/60',
                 result: 'text-emerald-400'
             }
         case 'blue':
             return {
-                border: 'border-blue-900/30',
-                title: 'text-blue-500/70',
-                formula: 'text-blue-500/50',
-                breakdown: 'text-blue-500/80',
+                border: 'border-blue-900/20 bg-blue-950/10',
+                title: 'text-blue-400/80',
+                formula: 'text-blue-500/40',
+                breakdown: 'text-blue-400/60',
                 result: 'text-blue-400'
             }
         case 'amber':
         default:
             return {
-                border: 'border-amber-900/30',
-                title: 'text-amber-500/70',
-                formula: 'text-amber-500/50',
-                breakdown: 'text-amber-500/80',
-                result: 'text-amber-300'
+                border: 'border-border bg-card/40',
+                title: 'text-muted-foreground',
+                formula: 'text-muted-foreground/60',
+                breakdown: 'text-muted-foreground',
+                result: 'text-foreground'
             }
     }
 })
 </script>
 
 <template>
-    <div class="flex flex-col gap-1 bg-black/20 p-2 rounded border relative mt-1" :class="colorClasses.border">
+    <div class="flex flex-col gap-1 p-2 rounded border relative mt-2 group/card" :class="colorClasses.border">
         <div v-if="title"
-            class="absolute -top-2 left-2 text-[8px] bg-zinc-900 px-1 rounded-sm uppercase tracking-wider font-bold"
+            class="absolute -top-2 left-2 text-[8px] bg-muted px-1 rounded-sm uppercase tracking-wider font-bold"
             :class="colorClasses.title">
             {{ title }}
         </div>
