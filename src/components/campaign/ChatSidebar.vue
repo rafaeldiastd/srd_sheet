@@ -21,7 +21,7 @@ const props = defineProps<{
 
 const recipientId = defineModel<string>('recipientId', { default: 'all' })
 
-const { rollDamage, rollSpellEffect, deleteMessage } = useCampaignRolls(
+const { rollDamage, deleteMessage } = useCampaignRolls(
     props.campaignId, 
     computed(() => props.memberName || ''), 
     recipientId, 
@@ -44,7 +44,7 @@ async function fetchMessages() {
 
     if (!error && data) {
         messages.value = data.map(m => {
-            if (['roll', 'whisper', 'spell'].includes(m.type)) {
+            if (['roll', 'whisper'].includes(m.type)) {
                 try { m.rollData = JSON.parse(m.content) } catch { }
             }
             return m
@@ -132,7 +132,7 @@ function setupRealtime() {
             (payload) => {
                 if (payload.eventType === 'INSERT') {
                     const newMsg = payload.new as any
-                    if (['roll', 'whisper', 'spell'].includes(newMsg.type)) {
+                    if (['roll', 'whisper'].includes(newMsg.type)) {
                         try { newMsg.rollData = JSON.parse(newMsg.content) } catch { }
                     }
                     messages.value.push(newMsg)
@@ -141,7 +141,7 @@ function setupRealtime() {
                     const idx = messages.value.findIndex(m => m.id === payload.new.id)
                     if (idx !== -1) {
                         const updMsg = payload.new as any
-                        if (['roll', 'whisper', 'spell'].includes(updMsg.type)) {
+                        if (['roll', 'whisper'].includes(updMsg.type)) {
                             try { updMsg.rollData = JSON.parse(updMsg.content) } catch { }
                         }
                         messages.value[idx] = updMsg
@@ -165,9 +165,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="flex flex-col h-full bg-zinc-950 border-l border-border w-72 md:w-80">
+    <div class="flex flex-col h-full bg-sidebar border-l border-sidebar-border w-72 md:w-80">
         <!-- Header -->
-        <div class="p-3 border-b border-border bg-zinc-900/50">
+        <div class="p-3 border-b border-sidebar-border bg-sidebar">
             <h3 class="font-bold text-sm">Chat da Campanha</h3>
         </div>
 
@@ -184,17 +184,16 @@ onUnmounted(() => {
                   :is-d-m="authStore.user?.id === props.dmId"
                   @delete="(id) => deleteMessage(id)"
                   @roll-damage="rollDamage"
-                  @roll-spell-effect="rollSpellEffect"
                 />
             </template>
         </div>
 
         <!-- Input -->
-        <div class="p-3 border-t border-border bg-zinc-900/50 space-y-2">
+        <div class="p-3 border-t border-sidebar-border bg-sidebar space-y-2">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-[10px] font-bold text-muted-foreground uppercase">Enviar para:</span>
                 <select v-model="recipientId"
-                    class="text-xs bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-zinc-300 focus:outline-none focus:border-primary">
+                    class="text-xs bg-background border border-border rounded px-1.5 py-0.5 text-foreground focus:outline-none focus:border-primary">
                     <option value="all">Todos</option>
                     <option v-if="props.dmId && authStore.user?.id !== props.dmId" :value="props.dmId">Mestre</option>
                     <template v-if="props.members">
@@ -209,7 +208,7 @@ onUnmounted(() => {
             <form @submit.prevent="sendMessage" class="flex gap-2">
                 <Input v-model="newMessage"
                     :placeholder="recipientId === 'all' ? 'Digite sua mensagem...' : 'Sussurrar mensagem...'"
-                    class="flex-1 bg-zinc-950 border-zinc-800 focus-visible:ring-primary/50" />
+                    class="flex-1 bg-background border-border focus-visible:ring-primary/50" />
                 <Button type="submit" size="icon" :disabled="!newMessage.trim()">
                     <Send class="w-4 h-4" />
                 </Button>
@@ -228,11 +227,11 @@ onUnmounted(() => {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #3f3f46;
+    background: var(--border);
     border-radius: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+    background: var(--muted-foreground);
 }
 </style>

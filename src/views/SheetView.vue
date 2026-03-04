@@ -7,22 +7,25 @@ import { supabase } from '@/lib/supabase'
 import SummaryTab from '@/components/sheet/tabs/SummaryTab.vue'
 import SkillsTab from '@/components/sheet/tabs/SkillsTab.vue'
 import FeatsTab from '@/components/sheet/tabs/FeatsTab.vue'
-import SpellsTab from '@/components/sheet/tabs/SpellsTab.vue'
 import EquipmentTab from '@/components/sheet/tabs/EquipmentTab.vue'
 import ResourcesTab from '@/components/sheet/tabs/ResourcesTab.vue'
 import ConfigTab from '@/components/sheet/tabs/ConfigTab.vue'
+import CharacteristicsTab from '@/components/sheet/tabs/CharacteristicsTab.vue'
+import SpellsTab from '@/components/sheet/tabs/SpellsTab.vue'
 
-// Shared components
+// Modals
 import ItemEditorModal from '@/components/sheet/ItemEditorModal.vue'
-import HeaderBlock from '@/components/sheet/blocks/HeaderBlock.vue'
-import CoreDataEditorModal from '@/components/sheet/CoreDataEditorModal.vue'
-import RawDataEditorModal from '@/components/sheet/RawDataEditorModal.vue'
+import EditSheetModal from '@/components/sheet/EditSheetModal.vue'
 
 // Icons
 import {
-  LayoutDashboard, Dices, Swords, Wand2, Package,
-  Shield, Settings, ChevronLeft, Loader2
+  LayoutDashboard, Dices, Swords, Package,
+  Shield, Settings, ChevronLeft, Loader2, User, Pencil
 } from 'lucide-vue-next'
+
+// Header / CoreEditor (kept for legacy edit-core flow)
+import HeaderBlock from '@/components/sheet/blocks/HeaderBlock.vue'
+import CoreDataEditorModal from '@/components/sheet/CoreDataEditorModal.vue'
 
 // Composables & types
 import type { SheetData } from '@/types/sheet'
@@ -33,7 +36,6 @@ import { useDeleteConfirm } from '@/composables/useDeleteConfirm'
 import { useDndCalculations } from '@/composables/useDndCalculations'
 import { useRolls } from '@/composables/useRolls'
 import { useSkills } from '@/composables/useSkills'
-import { useSpellSlots } from '@/composables/useSpellSlots'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,7 +45,7 @@ const props = defineProps<{
   isEmbedded?: boolean
   onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
   onAttackRoll?: (label: string, attackFormula: string, damageFormula: string) => void
-  onSpellRoll?: (spell: any) => void
+  onShowDescription?: (title: string, description: string) => void
 }>()
 
 const currentSheetId = computed(() => props.sheetId || route.params.id as string)
@@ -66,34 +68,56 @@ const {
   meleeAtk, rangedAtk, grappleAtk,
   totalFort, totalRef, totalWill,
   deathStatus, totalWeight, adjustField
-} = useDndCalculations(d, editMode, editedData, sheet)
+} = useDndCalculations(d)
 
-const { resolveFormula, handleRoll, handleItemRoll, sendSpellToChat } = useRolls({
+const { resolveFormula, handleRoll, handleItemRoll, handleShowDescription } = useRolls({
   attrTotal, calcMod, modStr,
   totalCA, totalTouch, totalFlatFooted,
   totalBAB, meleeAtk, rangedAtk, grappleAtk,
   totalHP, totalInitiative, totalFort, totalRef, totalWill,
-  d, onRoll: props.onRoll, onAttackRoll: props.onAttackRoll, onSpellRoll: props.onSpellRoll
+  d, onRoll: props.onRoll, onAttackRoll: props.onAttackRoll, onShowDescription: props.onShowDescription
 })
 
 const { skillPhase, skillSearch, isClassSkill, filteredSkillsList, toggleSkillEdit, skillAbilityMod, skillTotal, adjustRank, addLevelUpSkillPoints, skillPointsSpent, activeSkills } = useSkills(d, editedData, editMode, sheet, calcMod, attrTotal, totalBonuses)
-const { SPELL_LEVELS, spellSlotsMax, spellSlotsUsed, preparedSpells, spentSlots,
-        adjustSlotUsed, adjustSlotMax, setPreparedSpell, clearAllPreparedSpells,
-        spendSlot, recoverSlot, recoverAllSlots,
-        snapshotPreparedSpells, snapshotSpentSlots } = useSpellSlots(sheet)
 
 // ── Tabs ───────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'summary', label: 'Resumo', icon: LayoutDashboard },
-  { id: 'skills', label: 'Perícias', icon: Dices },
-  { id: 'feats', label: 'Talentos', icon: Swords },
-  { id: 'spells', label: 'Magias', icon: Wand2 },
-  { id: 'equipment', label: 'Itens', icon: Package },
-  { id: 'resources', label: 'Recursos & Buffs', icon: Shield },
-  { id: 'config', label: 'Config', icon: Settings },
+  { id: 'summary',         label: 'Resumo',        icon: LayoutDashboard },
+  { id: 'skills',          label: 'Perícias',       icon: Dices           },
+  { id: 'spells',          label: 'Magias',         icon: Swords          },
+  { id: 'feats',           label: 'Talentos',       icon: Swords          },
+  { id: 'equipment',       label: 'Itens',          icon: Package         },
+  { id: 'resources',       label: 'Recursos',       icon: Shield          },
+  { id: 'characteristics', label: 'Características',icon: User            },
+  { id: 'config',          label: 'Config',         icon: Settings        },
 ]
 
 const activeTab = ref('summary')
+
+// ── Edit Sheet Modal ───────────────────────────────────────────────────
+const editSheetOpen = ref(false)
+
+function handleEditSaved(payload: { meta: { name: string; class: string; level: number; race: string }, data: any }) {
+  if (!sheet.value) return
+
+  // Atualiza colunas de meta na tabela
+  sheet.value.name  = payload.meta.name
+  sheet.value.class = payload.meta.class
+  sheet.value.level = payload.meta.level
+  sheet.value.race  = payload.meta.race
+
+  // Preserva apenas hp_current (gerenciado em tempo real, não editado no modal)
+  const hp_current = sheet.value.data.hp_current
+
+  // Substitui o data completo com o editado
+  sheet.value.data = {
+    ...payload.data,
+    hp_current,
+  }
+
+  // Re-fetch para garantir sincronia com o banco e forçar reatividade completa
+  fetchSheet()
+}
 
 
 
@@ -122,9 +146,8 @@ async function saveCurrentHP() {
 }
 
 async function saveEdit() {
-  await saveEditComp(spellSlotsMax.value, spellSlotsUsed.value)
+  await saveEditComp()
   if (sheet.value) {
-    sheet.value.data.preparedSpells = snapshotPreparedSpells()
     await saveSheet()
   }
 }
@@ -133,65 +156,10 @@ function toggleTabsEdit() {
   toggleTabsEditComp(async () => { await saveEdit() })
 }
 
-function handleSetPreparedSpell(level: number, slotIndex: number, spellId: string | null) {
-  setPreparedSpell(level, slotIndex, spellId)
-  if (sheet.value) {
-    sheet.value.data.preparedSpells = snapshotPreparedSpells()
-    sheet.value.data.spentSlots     = snapshotSpentSlots()
-    saveSheet()
-  }
-}
-
-function handleClearAllPreparedSpells() {
-  clearAllPreparedSpells()
-  if (sheet.value) {
-    sheet.value.data.preparedSpells = snapshotPreparedSpells()
-    sheet.value.data.spentSlots     = snapshotSpentSlots()
-    saveSheet()
-  }
-}
-
-function handleSpendSlot(level: number, slotIndex: number) {
-  spendSlot(level, slotIndex)
-  if (sheet.value) {
-    sheet.value.data.spentSlots     = snapshotSpentSlots()
-    saveSheet()
-  }
-}
-
-function handleRecoverSlot(level: number, slotIndex: number) {
-  recoverSlot(level, slotIndex)
-  if (sheet.value) {
-    sheet.value.data.spentSlots     = snapshotSpentSlots()
-    saveSheet()
-  }
-}
-
-function handleRecoverAllSlots() {
-  recoverAllSlots()
-  if (sheet.value) {
-    sheet.value.data.spentSlots     = snapshotSpentSlots()
-    saveSheet()
-  }
-}
-
-function handleApplyBuff(name: string, value: string) {
-  if (sheet.value) {
-    if (!sheet.value.data.buffs) sheet.value.data.buffs = []
-    sheet.value.data.buffs.push({
-      title: name,
-      description: value,
-      active: true,
-      modifiers: []
-    })
-    saveSheet()
-  }
-}
-
 // ── Delete ─────────────────────────────────────────────────────────────
 const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelete } = useDeleteConfirm(async (type, index) => {
   if (sheet.value?.data) {
-    const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
+    const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
     const key = map[type]
     if (key && Array.isArray((sheet.value.data as any)[key])) {
       (sheet.value.data as any)[key].splice(index, 1)
@@ -200,11 +168,21 @@ const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelet
   }
 })
 
+// ── Delete Sheet ────────────────────────────────────────────────────────
+async function deleteSheet() {
+  if (!sheet.value) return
+  const { error } = await supabase.from('sheets').delete().eq('id', sheet.value.id)
+  if (error) {
+    alert('Erro ao excluir ficha: ' + error.message)
+    return
+  }
+  router.push('/dashboard')
+}
+
 // ── Item & Core Editor ──────────────────────────────────────────────────
 const editorOpen = ref(false)
 const coreEditorOpen = ref(false)
-const rawEditorOpen = ref(false)
-const editorType = ref<'feat' | 'spell' | 'shortcut' | 'equipment' | 'buff'>('feat')
+const editorType = ref<'feat' | 'shortcut' | 'equipment' | 'buff'>('feat')
 const editorItem = ref<any>(null)
 const editorIndex = ref(-1)
 
@@ -221,23 +199,13 @@ function openEquipmentEditor(item?: any, index = -1) {
 
 function handleEditorSave(data: any) {
   if (!sheet.value) return
-  const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
+  const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
   const key = map[editorType.value]
   if (!key) return
   if (!(sheet.value.data as any)[key]) (sheet.value.data as any)[key] = []
   const list = (sheet.value.data as any)[key]
   if (editorIndex.value >= 0) list[editorIndex.value] = data
   else list.push(data)
-  saveSheet()
-}
-
-function cloneSpell(index: number) {
-  if (!sheet.value || !sheet.value.data.spells) return
-  const original = sheet.value.data.spells[index]
-  if (!original) return
-  const copy = JSON.parse(JSON.stringify(original))
-  copy.title = `${copy.title} (Cópia)`
-  sheet.value.data.spells.push(copy)
   saveSheet()
 }
 
@@ -258,15 +226,7 @@ async function handleCoreSave(meta: { name: string; class: string; level: number
   }
 }
 
-async function handleRawDataSave(data: any) {
-  if (!sheet.value) return
-  try {
-    sheet.value.data = data
-    await saveSheetData(sheet.value.id, data)
-  } catch (err: any) {
-    alert('Erro ao salvar ficha: ' + err.message)
-  }
-}
+
 
 // ── Resources ───────────────────────────────────────────────────────────
 function addResource(name: string, max: number) {
@@ -294,6 +254,36 @@ function deleteResource(i: number) {
   confirmDelete('resource', i)
 }
 
+// Save resource from ResourceEditorModal
+function handleSaveResource(resource: any, index: number) {
+  if (!sheet.value) return
+  if (!sheet.value.data.resources) sheet.value.data.resources = []
+  if (index >= 0) {
+    sheet.value.data.resources[index] = resource
+  } else {
+    sheet.value.data.resources.push(resource)
+  }
+  saveResources()
+}
+
+// ── Custom Skills ──────────────────────────────────────────────────────────
+function handleSaveCustomSkill(skill: any, index: number) {
+  if (!sheet.value) return
+  if (!sheet.value.data.customSkills) sheet.value.data.customSkills = []
+  if (index >= 0) {
+    sheet.value.data.customSkills[index] = skill
+  } else {
+    sheet.value.data.customSkills.push(skill)
+  }
+  saveSheet()
+}
+
+function handleDeleteCustomSkill(index: number) {
+  if (!sheet.value?.data?.customSkills) return
+  sheet.value.data.customSkills.splice(index, 1)
+  saveSheet()
+}
+
 
 
 // ── Equipment / Buff Toggles ───────────────────────────────────────────
@@ -311,11 +301,54 @@ function toggleBuff(i: number) {
     supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
   }
 }
+function toggleFeatActive(i: number) {
+  if (sheet.value?.data?.feats?.[i]) {
+    const feat = sheet.value.data.feats[i]
+    feat.active = !feat.active
+    supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  }
+}
+function toggleEquipmentActive(i: number) {
+  if (sheet.value?.data?.equipment?.[i]) {
+    const item = sheet.value.data.equipment[i]
+    item.active = !item.active
+    supabase.from('sheets').update({ data: { ...sheet.value.data } }).eq('id', sheet.value.id)
+  }
+}
 
-// ── Slot adjustments ───────────────────────────────────────────────────
-function handleAdjustSlot(level: number, delta: number, field: 'used' | 'max') {
-  if (field === 'used') adjustSlotUsed(level, delta)
-  else adjustSlotMax(level, delta)
+function handleUpdateSpellSlots(level: number, stats: any) {
+  if (!sheet.value?.data) return
+  if (!sheet.value.data.spellSlots) sheet.value.data.spellSlots = {}
+  sheet.value.data.spellSlots[level] = stats
+  saveSheet()
+}
+
+function handleTogglePrepared(index: number) {
+  if (!sheet.value?.data?.spells?.[index]) return
+  const spell = sheet.value.data.spells[index]
+  spell.prepared = !spell.prepared
+  saveSheet()
+}
+
+function handleDeleteSpell(index: number) {
+  if (!sheet.value?.data?.spells) return
+  sheet.value.data.spells.splice(index, 1)
+  saveSheet()
+}
+
+function handleAddSpell(spell: any) {
+  if (!sheet.value?.data) return
+  if (!sheet.value.data.spells) sheet.value.data.spells = []
+  sheet.value.data.spells.push(spell)
+  saveSheet()
+}
+
+function handleOpenGrimoire() {
+  if (!sheet.value?.campaign_id) {
+    alert('Esta ficha não está vinculada a nenhuma campanha.')
+    return
+  }
+  window.open(`/campaign/${sheet.value.campaign_id}/grimoire`, '_blank')
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────
@@ -333,20 +366,24 @@ onMounted(fetchSheet)
 </script>
 
 <template>
-  <div :class="[isEmbedded ? '' : 'min-h-screen bg-[#0a0a0b] text-foreground']">
+  <div :class="[isEmbedded ? '' : 'min-h-screen bg-background text-foreground']">
     <div :class="[isEmbedded ? '' : 'max-w-5xl mx-auto px-3 py-4']">
 
-      <!-- Back -->
-      <div v-if="!isEmbedded" class="mb-3">
+      <!-- edit button -->
+      <div v-if="!isEmbedded" class="mb-3 flex items-center justify-between">
         <button @click="router.push('/dashboard')"
-          class="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+          class="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft class="w-4 h-4" /> Voltar
+        </button>
+        <button @click="router.push(`/sheet/${currentSheetId}/edit`)"
+          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors">
+          <Pencil class="w-3.5 h-3.5" /> Editar Ficha
         </button>
       </div>
 
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center py-28">
-        <div class="flex flex-col items-center gap-3 text-zinc-600">
+        <div class="flex flex-col items-center gap-3 text-muted-foreground">
           <Loader2 class="w-8 h-8 animate-spin" />
           <span class="text-sm">Carregando ficha...</span>
         </div>
@@ -358,13 +395,12 @@ onMounted(fetchSheet)
           :d="d"
           :edit-mode="editMode"
           @edit-core="coreEditorOpen = true"
-          @edit-raw="rawEditorOpen = true"
         />
 
         <!-- ═══ TAB BAR ═══ -->
-        <div class="sticky top-0 z-30 mb-4 -mx-3 px-3" style="background: linear-gradient(to bottom, #0a0a0b 85%, transparent)">
+        <div class="sticky top-0 z-30 mb-4 -mx-3 px-3" style="background: linear-gradient(to bottom, var(--background) 85%, transparent)">
           <div class="w-full overflow-x-auto scrollbar-hide pb-1">
-            <div class="flex gap-1 justify-between min-w-max bg-zinc-950/90 border border-zinc-800/70 rounded-xl p-1.5 backdrop-blur-sm">
+            <div class="flex gap-1 justify-between min-w-max bg-card/90 border border-border/70 rounded-xl p-1.5 backdrop-blur-sm">
               <button
                 v-for="tab in TABS"
                 :key="tab.id"
@@ -372,7 +408,7 @@ onMounted(fetchSheet)
                 class="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap"
                 :class="activeTab === tab.id
                   ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
-                  : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60'"
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'"
               >
                 <component :is="tab.icon" class="w-4 h-4" />
                 <span>{{ tab.label }}</span>
@@ -385,38 +421,20 @@ onMounted(fetchSheet)
         <div class="min-h-[50vh]">
 
           <!-- RESUMO -->
-          <SummaryTab
-            v-if="activeTab === 'summary'"
-            :sheet="sheet"
-            :d="d"
-            :edit-mode="editMode"
-            :edited-data="editedData"
-            :prepared-spells="preparedSpells"
-            :total-h-p="totalHP"
-            :total-c-a="totalCA"
-            :total-touch="totalTouch"
-            :total-flat-footed="totalFlatFooted"
-            :total-b-a-b="totalBAB"
-            :total-initiative="totalInitiative"
-            :total-speed="totalSpeed"
-            :melee-atk="meleeAtk"
-            :ranged-atk="rangedAtk"
-            :grapple-atk="grappleAtk"
-            :total-fort="totalFort"
-            :total-ref="totalRef"
-            :total-will="totalWill"
+          <SummaryTab v-show="activeTab === 'summary'"
+            :sheet="sheet" :d="d" :edit-mode="editMode" :edited-data="editedData"
+            :total-h-p="totalHP" :total-c-a="totalCA" :total-touch="totalTouch" :total-flat-footed="totalFlatFooted"
+            :total-b-a-b="totalBAB" :total-initiative="totalInitiative" :total-speed="totalSpeed"
+            :melee-atk="meleeAtk" :ranged-atk="rangedAtk" :grapple-atk="grappleAtk"
+            :total-fort="totalFort" :total-ref="totalRef" :total-will="totalWill"
             :death-status="deathStatus"
-            :attr-total="attrTotal"
-            :calc-mod="calcMod"
-            :mod-str="modStr"
-            :mod-str-f="modStrF"
+            :attr-total="attrTotal" :calc-mod="calcMod" :mod-str="modStr" :mod-str-f="modStrF"
             :resolve-formula="resolveFormula"
             :ATTR_KEYS="ATTR_KEYS"
             :ATTR_LABELS="ATTR_LABELS"
             @save-hp="saveCurrentHP"
             @roll="handleRoll"
             @roll-item="handleItemRoll"
-            @roll-spell="(spell) => handleItemRoll(spell)"
             @add-shortcut="openEditor('shortcut')"
             @delete-shortcut="(i) => confirmDelete('shortcut', i)"
             @add-resource="addResource"
@@ -424,27 +442,22 @@ onMounted(fetchSheet)
             @reset-resources="resetResources"
             @delete-resource="deleteResource"
             @toggle-buff="toggleBuff"
+            @toggle-feat-active="toggleFeatActive"
+            @toggle-equipment-active="toggleEquipmentActive"
+            @toggle-equipped="toggleEquipped"
+            :on-show-description="handleShowDescription"
           />
 
           <!-- PERÍCIAS -->
-          <SkillsTab
-            v-else-if="activeTab === 'skills'"
-            :d="d"
-            :edit-mode="editMode"
-            :tabs-edit-mode="tabsEditMode"
-            :edited-data="editedData"
-            :skill-phase="skillPhase"
-            :skill-search="skillSearch"
-            :filtered-skills-list="filteredSkillsList"
-            :active-skills="activeSkills"
-            :skill-points-spent="skillPointsSpent"
-            :mod-str="modStr"
-            :mod-str-f="modStrF"
-            :skill-ability-mod="skillAbilityMod"
-            :skill-total="skillTotal"
-            :is-class-skill="isClassSkill"
-            :calc-mod="calcMod"
-            :attr-total="attrTotal"
+          <SkillsTab v-show="activeTab === 'skills'"
+            :d="d" :edit-mode="editMode" :tabs-edit-mode="tabsEditMode" :edited-data="editedData"
+            :skill-phase="skillPhase" :skill-search="skillSearch" :filtered-skills-list="filteredSkillsList"
+            :active-skills="activeSkills" :skill-points-spent="skillPointsSpent"
+            :mod-str="modStr" :mod-str-f="modStrF" :skill-ability-mod="skillAbilityMod"
+            :skill-total="skillTotal" :is-class-skill="isClassSkill"
+            :calc-mod="calcMod" :attr-total="attrTotal"
+            :on-save-custom-skill="handleSaveCustomSkill"
+            :on-delete-custom-skill="handleDeleteCustomSkill"
             @toggle-tabs-edit="toggleTabsEdit"
             @update:skill-phase="skillPhase = $event"
             @update:skill-search="skillSearch = $event"
@@ -454,85 +467,71 @@ onMounted(fetchSheet)
             @roll="handleRoll"
           />
 
-          <!-- TALENTOS & ATAQUES -->
-          <FeatsTab
-            v-else-if="activeTab === 'feats'"
-            :d="d"
-            :edit-mode="editMode"
-            :mod-str="modStr"
+          <!-- MAGIAS -->
+          <SpellsTab v-show="activeTab === 'spells'"
+            :d="d" 
+            :edit-mode="editMode" 
             :resolve-formula="resolveFormula"
-            :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-roll="handleRoll"
-            :on-attack-roll="(label: string, atkF: string, dmgF: string) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
+            @roll="handleRoll"
+            @attack-roll="(label: string, atk: string, dmg: string) => handleItemRoll({ title: label, isAttack: true, attackFormula: atk, damageFormula: dmg })"
+            @show-description="handleShowDescription"
+            @open-grimoire="handleOpenGrimoire"
+            @update:spell-slots="handleUpdateSpellSlots"
+            @toggle-prepared="handleTogglePrepared"
+            @delete-spell="handleDeleteSpell"
+            @add-spell="handleAddSpell"
           />
 
-          <!-- MAGIAS -->
-          <SpellsTab
-            v-else-if="activeTab === 'spells'"
-            :d="d"
-            :edit-mode="editMode"
-            :tabs-edit-mode="tabsEditMode"
-            :spell-slots-max="spellSlotsMax"
-            :spell-slots-used="spellSlotsUsed"
-            :prepared-spells="preparedSpells"
-            :spent-slots="spentSlots"
-            :SPELL_LEVELS="SPELL_LEVELS"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
-            :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-spell-roll="(spell: any) => sendSpellToChat(spell)"
-            :on-adjust-slot="handleAdjustSlot"
-            :on-set-prepared-spell="handleSetPreparedSpell"
-            :on-clear-all-prepared="handleClearAllPreparedSpells"
-            :on-spend-slot="handleSpendSlot"
-            :on-recover-slot="handleRecoverSlot"
-            :on-recover-all-slots="handleRecoverAllSlots"
-            :on-apply-buff="handleApplyBuff"
-            :on-toggle-edit="toggleTabsEdit"
-            :on-clone="cloneSpell"
+          <!-- TALENTOS -->
+          <FeatsTab v-show="activeTab === 'feats'"
+            :d="d" :editMode="editMode" :modStr="modStr" :resolveFormula="resolveFormula"
+            :onOpenEditor="openEditor"
+            :onDelete="confirmDelete"
+            :onRoll="handleRoll"
+            :onAttackRoll="(label: string, atkF: string, dmgF: string) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
+            @toggle-active="toggleFeatActive"
+            :onShowDescription="handleShowDescription"
           />
 
           <!-- ITENS -->
-          <EquipmentTab
-            v-else-if="activeTab === 'equipment'"
-            :d="d"
-            :edit-mode="editMode"
-            :total-weight="totalWeight"
-            :on-open-editor="openEquipmentEditor"
-            :on-delete="confirmDelete"
-            :on-toggle-equipped="toggleEquipped"
+          <EquipmentTab v-show="activeTab === 'equipment'"
+            :d="d" :editMode="editMode" :totalWeight="totalWeight"
+            :onOpenEditor="openEquipmentEditor"
+            :onDelete="confirmDelete"
+            :onToggleEquipped="toggleEquipped"
+            @toggle-active="toggleEquipmentActive"
+            @roll-item="handleItemRoll"
+            :onShowDescription="handleShowDescription"
           />
 
           <!-- RECURSOS & BUFFS -->
-          <ResourcesTab
-            v-else-if="activeTab === 'resources'"
-            :sheet="sheet"
+          <ResourcesTab v-show="activeTab === 'resources'"
+            :sheet="sheet" :d="d" :editMode="editMode"
+            :modStr="modStr" :resolveFormula="resolveFormula"
+            :onAdjust="adjustResource"
+            :onReset="resetResources"
+            :onAdd="addResource"
+            :onDelete="deleteResource"
+            :onOpenEditor="openEditor"
+            :onDeleteBuff="(i: number) => confirmDelete('buff', i)"
+            :onToggleBuff="toggleBuff"
+            :onRollItem="handleItemRoll"
+            :onShowDescription="handleShowDescription"
+            :onSaveResource="handleSaveResource"
+          />
+
+          <!-- CARACTERÍSTICAS -->
+          <CharacteristicsTab v-show="activeTab === 'characteristics'"
             :d="d"
-            :edit-mode="editMode"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
-            :on-adjust="adjustResource"
-            :on-reset="resetResources"
-            :on-add="addResource"
-            :on-delete="deleteResource"
-            :on-open-editor="openEditor"
-            :on-delete-buff="(i: number) => confirmDelete('buff', i)"
-            :on-toggle-buff="toggleBuff"
+            :edit-mode="true"
+            @save="(partial) => { if (sheet) { Object.assign(sheet.data, partial); saveSheet() } }"
           />
 
           <!-- CONFIG -->
-          <ConfigTab
-            v-else-if="activeTab === 'config'"
-            :d="d"
-            :b="b"
-            :edit-mode="editMode"
-            :tabs-edit-mode="tabsEditMode"
-            :edited-data="editedData"
-            :mod-str="modStr"
-            :adjust-field="adjustField"
-            :on-toggle-edit="toggleTabsEdit"
+          <ConfigTab v-show="activeTab === 'config'"
+            :d="d" :b="b" :edit-mode="editMode" :tabs-edit-mode="tabsEditMode" :edited-data="editedData"
+            :mod-str="modStr" :adjust-field="adjustField" :on-toggle-edit="toggleTabsEdit"
+            :on-delete-sheet="!isEmbedded ? deleteSheet : undefined"
           />
         </div>
       </template>
@@ -559,26 +558,33 @@ onMounted(fetchSheet)
       @save="handleCoreSave"
     />
 
-    <!-- Raw Data Editor Modal -->
-    <RawDataEditorModal
-      v-if="sheet"
-      v-model="rawEditorOpen"
-      :data="sheet.data"
-      @save="handleRawDataSave"
+    <!-- Edit Sheet Modal -->
+    <EditSheetModal
+      v-if="editSheetOpen && sheet"
+      :sheet-id="sheet.id"
+      :initial-data="sheet.data"
+      :sheet-name="sheet.name"
+      :sheet-race="sheet.race"
+      :sheet-class="sheet.class"
+      :sheet-level="sheet.level"
+      @close="editSheetOpen = false"
+      @saved="handleEditSaved"
     />
+
+
 
     <!-- Delete confirm -->
     <Teleport to="body">
       <div v-if="isDeleteOpen" class="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
-        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
-          <div class="text-4xl">🗑️</div>
+        <div class="bg-card border border-border rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+          <div class="text-4xl"></div>
           <div>
-            <p class="font-bold text-zinc-100">Confirmar exclusão?</p>
-            <p class="text-sm text-zinc-500 mt-1">Esta ação não pode ser desfeita.</p>
+            <p class="font-bold text-foreground">Confirmar exclusão?</p>
+            <p class="text-sm text-muted-foreground mt-1">Esta ação não pode ser desfeita.</p>
           </div>
           <div class="flex gap-3">
             <button @click="cancelDelete"
-              class="flex-1 py-2 rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors text-sm">
+              class="flex-1 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors text-sm">
               Cancelar
             </button>
             <button @click="executeDelete"

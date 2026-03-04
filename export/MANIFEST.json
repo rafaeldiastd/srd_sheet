@@ -1,17 +1,29 @@
 {
   "root": "srd_sheet",
   "mode": "full",
-  "commit": "c470c7c",
-  "generated_at": "2026-02-28T00:37:16.137790+00:00",
+  "commit": "59425fa",
+  "generated_at": "2026-03-03T03:08:14.353474+00:00",
   "filters": {},
   "summary": {
-    "total_files": 103,
+    "total_files": 113,
     "excluded_files": 0,
-    "total_bytes": 329046,
-    "total_lines": 8134,
-    "estimated_tokens": 82261
+    "total_bytes": 381555,
+    "total_lines": 9566,
+    "estimated_tokens": 95388
   },
   "files": [
+    {
+      "path": "db/campaign_notes.sql",
+      "lang": "sql",
+      "bytes": 1598,
+      "lines": 45
+    },
+    {
+      "path": "db/migration_chat.sql",
+      "lang": "sql",
+      "bytes": 1069,
+      "lines": 22
+    },
     {
       "path": "db/schema.sql",
       "lang": "sql",
@@ -33,8 +45,8 @@
     {
       "path": "package.json",
       "lang": "json",
-      "bytes": 963,
-      "lines": 39
+      "bytes": 1219,
+      "lines": 45
     },
     {
       "path": "postcss.config.js",
@@ -51,20 +63,38 @@
     {
       "path": "src/components/campaign/CampaignRollPanel.vue",
       "lang": "vue",
-      "bytes": 12292,
-      "lines": 243
+      "bytes": 10208,
+      "lines": 207
     },
     {
       "path": "src/components/campaign/CampaignSettingsDropdown.vue",
       "lang": "vue",
-      "bytes": 3618,
-      "lines": 96
+      "bytes": 3039,
+      "lines": 87
+    },
+    {
+      "path": "src/components/campaign/ChatAttackCard.vue",
+      "lang": "vue",
+      "bytes": 1865,
+      "lines": 47
+    },
+    {
+      "path": "src/components/campaign/ChatMessage.vue",
+      "lang": "vue",
+      "bytes": 6768,
+      "lines": 135
+    },
+    {
+      "path": "src/components/campaign/ChatRollResult.vue",
+      "lang": "vue",
+      "bytes": 2635,
+      "lines": 75
     },
     {
       "path": "src/components/campaign/ChatSidebar.vue",
       "lang": "vue",
-      "bytes": 13981,
-      "lines": 294
+      "bytes": 8429,
+      "lines": 238
     },
     {
       "path": "src/components/campaign/CreateCampaignModal.vue",
@@ -81,8 +111,8 @@
     {
       "path": "src/components/campaign/QuickNpcModal.vue",
       "lang": "vue",
-      "bytes": 6595,
-      "lines": 166
+      "bytes": 6575,
+      "lines": 165
     },
     {
       "path": "src/components/campaign/SheetChatOverlay.vue",
@@ -97,22 +127,70 @@
       "lines": 149
     },
     {
+      "path": "src/components/campaign/notepad/NotepadEditor.vue",
+      "lang": "vue",
+      "bytes": 2642,
+      "lines": 109
+    },
+    {
+      "path": "src/components/campaign/notepad/NotepadPanel.vue",
+      "lang": "vue",
+      "bytes": 6254,
+      "lines": 177
+    },
+    {
+      "path": "src/components/campaign/notepad/NotepadSidebar.vue",
+      "lang": "vue",
+      "bytes": 2930,
+      "lines": 82
+    },
+    {
+      "path": "src/components/campaign/notepad/NotepadToolbar.vue",
+      "lang": "vue",
+      "bytes": 3898,
+      "lines": 70
+    },
+    {
+      "path": "src/components/campaign/notepad/NotepadTreeItem.vue",
+      "lang": "vue",
+      "bytes": 8818,
+      "lines": 235
+    },
+    {
+      "path": "src/components/campaign/notepad/useNotepad.ts",
+      "lang": "typescript",
+      "bytes": 9549,
+      "lines": 283
+    },
+    {
       "path": "src/components/design/DesignToken.vue",
       "lang": "vue",
       "bytes": 1125,
       "lines": 31
     },
     {
+      "path": "src/components/sheet/CoreDataEditorModal.vue",
+      "lang": "vue",
+      "bytes": 18410,
+      "lines": 317
+    },
+    {
       "path": "src/components/sheet/ItemEditorModal.vue",
       "lang": "vue",
-      "bytes": 12587,
-      "lines": 220
+      "bytes": 9298,
+      "lines": 183
+    },
+    {
+      "path": "src/components/sheet/RawDataEditorModal.vue",
+      "lang": "vue",
+      "bytes": 3268,
+      "lines": 99
     },
     {
       "path": "src/components/sheet/blocks/AttrsBlock.vue",
       "lang": "vue",
-      "bytes": 4164,
-      "lines": 90
+      "bytes": 4120,
+      "lines": 87
     },
     {
       "path": "src/components/sheet/blocks/CombatBlock.vue",
@@ -121,70 +199,64 @@
       "lines": 96
     },
     {
+      "path": "src/components/sheet/blocks/HeaderBlock.vue",
+      "lang": "vue",
+      "bytes": 3644,
+      "lines": 74
+    },
+    {
       "path": "src/components/sheet/blocks/ResourcesBlock.vue",
       "lang": "vue",
-      "bytes": 4404,
+      "bytes": 4384,
       "lines": 102
     },
     {
       "path": "src/components/sheet/blocks/ShortcutsBlock.vue",
       "lang": "vue",
-      "bytes": 2353,
-      "lines": 54
+      "bytes": 2389,
+      "lines": 59
     },
     {
       "path": "src/components/sheet/blocks/VitalsBlock.vue",
       "lang": "vue",
-      "bytes": 4295,
-      "lines": 104
-    },
-    {
-      "path": "src/components/sheet/tabs/BuffsTab.vue",
-      "lang": "vue",
-      "bytes": 3019,
-      "lines": 67
+      "bytes": 3916,
+      "lines": 83
     },
     {
       "path": "src/components/sheet/tabs/ConfigTab.vue",
       "lang": "vue",
-      "bytes": 7424,
+      "bytes": 7438,
       "lines": 116
     },
     {
       "path": "src/components/sheet/tabs/EquipmentTab.vue",
       "lang": "vue",
-      "bytes": 4042,
+      "bytes": 4098,
       "lines": 87
     },
     {
       "path": "src/components/sheet/tabs/FeatsTab.vue",
       "lang": "vue",
-      "bytes": 4507,
+      "bytes": 4545,
       "lines": 94
     },
     {
       "path": "src/components/sheet/tabs/ResourcesTab.vue",
       "lang": "vue",
-      "bytes": 5053,
-      "lines": 115
+      "bytes": 8787,
+      "lines": 182
     },
     {
       "path": "src/components/sheet/tabs/SkillsTab.vue",
       "lang": "vue",
-      "bytes": 6457,
-      "lines": 152
-    },
-    {
-      "path": "src/components/sheet/tabs/SpellsTab.vue",
-      "lang": "vue",
-      "bytes": 6830,
-      "lines": 138
+      "bytes": 6272,
+      "lines": 145
     },
     {
       "path": "src/components/sheet/tabs/SummaryTab.vue",
       "lang": "vue",
-      "bytes": 14357,
-      "lines": 307
+      "bytes": 15897,
+      "lines": 342
     },
     {
       "path": "src/components/ui/button/Button.vue",
@@ -409,12 +481,6 @@
       "lines": 303
     },
     {
-      "path": "src/components/wizard/steps/SpellsStep.vue",
-      "lang": "vue",
-      "bytes": 1846,
-      "lines": 53
-    },
-    {
       "path": "src/components/wizard/steps/TypeStep.vue",
       "lang": "vue",
       "bytes": 2411,
@@ -429,8 +495,8 @@
     {
       "path": "src/composables/useDndCalculations.ts",
       "lang": "typescript",
-      "bytes": 6213,
-      "lines": 144
+      "bytes": 6177,
+      "lines": 138
     },
     {
       "path": "src/composables/useDragReorder.ts",
@@ -441,8 +507,8 @@
     {
       "path": "src/composables/useRolls.ts",
       "lang": "typescript",
-      "bytes": 5320,
-      "lines": 127
+      "bytes": 4069,
+      "lines": 100
     },
     {
       "path": "src/composables/useSheet.ts",
@@ -453,20 +519,14 @@
     {
       "path": "src/composables/useSheetEdit.ts",
       "lang": "typescript",
-      "bytes": 2512,
-      "lines": 72
+      "bytes": 2210,
+      "lines": 68
     },
     {
       "path": "src/composables/useSkills.ts",
       "lang": "typescript",
       "bytes": 4547,
       "lines": 115
-    },
-    {
-      "path": "src/composables/useSpellSlots.ts",
-      "lang": "typescript",
-      "bytes": 1569,
-      "lines": 46
     },
     {
       "path": "src/data/dnd35.ts",
@@ -483,8 +543,8 @@
     {
       "path": "src/lib/sheetDefaults.ts",
       "lang": "typescript",
-      "bytes": 1048,
-      "lines": 41
+      "bytes": 1028,
+      "lines": 40
     },
     {
       "path": "src/lib/supabase.ts",
@@ -495,8 +555,8 @@
     {
       "path": "src/lib/useCampaignRolls.ts",
       "lang": "typescript",
-      "bytes": 3734,
-      "lines": 122
+      "bytes": 5524,
+      "lines": 184
     },
     {
       "path": "src/lib/utils.ts",
@@ -513,8 +573,8 @@
     {
       "path": "src/router/index.ts",
       "lang": "typescript",
-      "bytes": 1892,
-      "lines": 71
+      "bytes": 1847,
+      "lines": 70
     },
     {
       "path": "src/stores/auth.ts",
@@ -525,8 +585,8 @@
     {
       "path": "src/stores/wizardStore.ts",
       "lang": "typescript",
-      "bytes": 2041,
-      "lines": 95
+      "bytes": 2009,
+      "lines": 94
     },
     {
       "path": "src/style.css",
@@ -537,14 +597,14 @@
     {
       "path": "src/types/sheet.ts",
       "lang": "typescript",
-      "bytes": 2900,
-      "lines": 154
+      "bytes": 2491,
+      "lines": 136
     },
     {
       "path": "src/views/CampaignView.vue",
       "lang": "vue",
-      "bytes": 13486,
-      "lines": 312
+      "bytes": 13887,
+      "lines": 335
     },
     {
       "path": "src/views/CreateSheetView.vue",
@@ -573,8 +633,8 @@
     {
       "path": "src/views/LoginView.vue",
       "lang": "vue",
-      "bytes": 7825,
-      "lines": 218
+      "bytes": 7790,
+      "lines": 217
     },
     {
       "path": "src/views/RegisterView.vue",
@@ -585,8 +645,8 @@
     {
       "path": "src/views/SheetView.vue",
       "lang": "vue",
-      "bytes": 19142,
-      "lines": 473
+      "bytes": 17984,
+      "lines": 470
     },
     {
       "path": "supabase_setup.sql",

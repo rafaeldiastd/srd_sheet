@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
@@ -37,9 +36,21 @@ const router = createRouter({
             meta: { requiresAuth: true }
         },
         {
+            path: '/sheet/:id/edit',
+            name: 'sheet-edit',
+            component: () => import('../views/EditSheetView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
             path: '/campaign/:id',
             name: 'campaign',
             component: () => import('../views/CampaignView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/campaign/:id/grimoire',
+            name: 'grimoire',
+            component: () => import('../views/GrimoireView.vue'),
             meta: { requiresAuth: true }
         },
         {

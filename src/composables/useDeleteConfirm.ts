@@ -9,7 +9,7 @@ export function useDeleteConfirm(onDelete: (type: string, index: number) => void
     function confirmDelete(type: string, index: number) {
         itemToDelete.value = { type, index }
         isDeleteOpen.value = true
-        deleteCountdown.value = 3
+        deleteCountdown.value = 2
         if (deleteTimer) clearInterval(deleteTimer)
         deleteTimer = setInterval(() => {
             deleteCountdown.value--

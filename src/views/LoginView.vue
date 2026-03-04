@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const isLogin = ref(true)

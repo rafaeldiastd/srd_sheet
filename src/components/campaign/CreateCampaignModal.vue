@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
@@ -69,7 +69,7 @@ async function createCampaign() {
 
 <template>
     <div class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" @click.self="emit('close')">
-        <Card class="w-full max-w-md bg-zinc-950 border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+        <Card class="w-full max-w-md bg-card border-border animate-in fade-in zoom-in-95 duration-200">
             <CardHeader class="flex flex-row items-center justify-between pb-2">
                 <CardTitle class="text-lg flex items-center gap-2">
                     <Sword class="w-5 h-5 text-primary" /> Nova Campanha

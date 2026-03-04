@@ -1,6 +1,85 @@
 
 
 ---
+## FILE: db/campaign_notes.sql
+```sql
+CREATE TABLE IF NOT EXISTS campaign_notes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  
+  campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  
+  -- Conteúdo
+  title TEXT NOT NULL DEFAULT 'Sem título',
+  content JSONB NOT NULL DEFAULT '{}',  -- TipTap JSON (doc structure)
+  
+  -- Organização
+  parent_id UUID REFERENCES campaign_notes(id) ON DELETE CASCADE,  -- NULL = raiz
+  is_folder BOOLEAN NOT NULL DEFAULT false,
+  sort_order INTEGER NOT NULL DEFAULT 0,  -- posição dentro da pasta
+  
+  UNIQUE(campaign_id, user_id, id)
+);
+
+-- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_campaign_notes_lookup 
+  ON campaign_notes(campaign_id, user_id, parent_id);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_notes_sort 
+  ON campaign_notes(parent_id, sort_order);
+
+ALTER TABLE campaign_notes ENABLE ROW LEVEL SECURITY;
+
+-- Cada jogador só vê suas próprias notas
+CREATE POLICY "Users can view own notes" ON campaign_notes
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own notes" ON campaign_notes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own notes" ON campaign_notes
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own notes" ON campaign_notes
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Grants
+GRANT ALL ON campaign_notes TO authenticated;
+
+```
+
+
+---
+## FILE: db/migration_chat.sql
+```sql
+-- Adicionar 'whisper' e 'spell' ao CHECK constraint
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_type_check;
+ALTER TABLE messages ADD CONSTRAINT messages_type_check
+  CHECK (type IN ('text', 'roll', 'system', 'whisper', 'spell'));
+
+-- Adicionar coluna para avatar e nome do personagem
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS character_name TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+-- Adicionar coluna parent_id para vincular dano ao ataque original
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+
+-- Policy de DELETE para mensagens (Apenas o autor pode deletar)
+DROP POLICY IF EXISTS "Users can delete own messages" ON messages;
+CREATE POLICY "Users can delete own messages" ON messages
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Policy de UPDATE (Autor pode atualizar sua própria mensagem)
+DROP POLICY IF EXISTS "Users can update own messages" ON messages;
+CREATE POLICY "Users can update own messages" ON messages
+  FOR UPDATE USING (auth.uid() = user_id);
+
+```
+
+
+---
 ## FILE: db/schema.sql
 ```sql
 -- Create the sheets table
@@ -98,6 +177,12 @@ add column if not exists level integer default 1;
     "@dice-roller/rpg-dice-roller": "^5.5.1",
     "@supabase/supabase-js": "^2.97.0",
     "@tailwindcss/postcss": "^4.2.0",
+    "@tiptap/extension-highlight": "^3.20.0",
+    "@tiptap/extension-placeholder": "^3.20.0",
+    "@tiptap/extension-task-item": "^3.20.0",
+    "@tiptap/extension-task-list": "^3.20.0",
+    "@tiptap/starter-kit": "^3.20.0",
+    "@tiptap/vue-3": "^3.20.0",
     "@vueuse/core": "^14.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -167,7 +252,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Sword, Sparkles, Zap, Activity, BookOpen, Dices } from 'lucide-vue-next'
+import { Sword, Zap, Activity, Dices } from 'lucide-vue-next'
 
 const props = defineProps<{ campaignId: string }>()
 
@@ -223,11 +308,6 @@ const skills = computed(() => {
 })
 
 const attacks = computed(() => sheetData.value?.shortcuts ?? [])
-const spells = computed(() =>
-    (sheetData.value?.spells ?? []).filter((s: any) =>
-        typeof s !== 'string' && s.rollFormula
-    )
-)
 
 const ATTR_LABELS: Record<string, string> = {
     str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR'
@@ -245,9 +325,6 @@ async function rollInitiative() {
 }
 
 
-async function rollSpell(spell: any) {
-    await sendRoll(spell.title || 'Magia', spell.rollFormula)
-}
 
 async function rollSkill(skill: { name: string; total: number }) {
     const formula = `1d20${modStr(skill.total)}`
@@ -293,9 +370,6 @@ onMounted(fetchMySheet)
                     </TabsTrigger>
                     <TabsTrigger value="attacks" class="text-[10px] px-1" title="Ataques">
                         <Sword class="w-3 h-3" />
-                    </TabsTrigger>
-                    <TabsTrigger value="spells" class="text-[10px] px-1" title="Magias">
-                        <Sparkles class="w-3 h-3" />
                     </TabsTrigger>
                     <TabsTrigger value="skills" class="text-[10px] px-1" title="Perícias">
                         <Zap class="w-3 h-3" />
@@ -357,31 +431,6 @@ onMounted(fetchMySheet)
                     </div>
                 </TabsContent>
 
-                <!-- SPELLS -->
-                <TabsContent value="spells" class="p-3">
-                    <div v-if="!spells.length" class="text-center py-8 text-xs text-muted-foreground italic">Nenhuma
-                        magia com fórmula de rolagem.</div>
-                    <div v-else class="space-y-2">
-                        <div v-for="(spell, i) in spells" :key="i"
-                            class="rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors p-3">
-                            <div class="flex items-start justify-between gap-2 mb-2">
-                                <div>
-                                    <p class="text-xs font-bold text-zinc-200">{{ spell.title }}</p>
-                                    <span
-                                        class="text-[9px] bg-zinc-800 border border-zinc-700 text-muted-foreground rounded px-1 py-0.5">
-                                        {{ spell.spellLevel === 0 ? 'Truque' : `Nível ${spell.spellLevel}` }}
-                                    </span>
-                                </div>
-                                <Button size="sm" variant="outline"
-                                    class="h-7 shrink-0 text-xs gap-1.5 border-blue-900/50 text-blue-400 hover:bg-blue-950/30"
-                                    :disabled="rolling" @click="rollSpell(spell)">
-                                    <BookOpen class="w-3 h-3" /> {{ spell.rollFormula }}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </TabsContent>
-
                 <!-- SKILLS -->
                 <TabsContent value="skills" class="p-3">
                     <div v-if="!skills.length" class="text-center py-8 text-xs text-muted-foreground italic">Nenhuma
@@ -413,14 +462,13 @@ onMounted(fetchMySheet)
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Button } from '@/components/ui/button'
-import { Settings, MessageSquare, BookOpen, LogOut } from 'lucide-vue-next'
+import { Settings, BookOpen, LogOut } from 'lucide-vue-next'
 
 const props = defineProps<{
-    showChat: boolean
     showNotes: boolean
 }>()
 
-const emit = defineEmits(['update:showChat', 'update:showNotes', 'leave'])
+const emit = defineEmits(['update:showNotes', 'leave'])
 
 const isOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
@@ -448,10 +496,6 @@ onUnmounted(() => {
     document.removeEventListener('mousedown', handleClickOutside)
 })
 
-function handleChatToggle() {
-    emit('update:showChat', !props.showChat)
-    closeMenu()
-}
 
 function handleNotesToggle() {
     emit('update:showNotes', !props.showNotes)
@@ -484,12 +528,8 @@ function handleLeave() {
                         Interface
                     </div>
                     
-                    <button @click="handleChatToggle" class="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-primary flex items-center gap-2">
-                        <MessageSquare class="w-4 h-4" :class="props.showChat ? 'text-primary' : 'text-muted-foreground'" />
-                        <span>{{ props.showChat ? 'Ocultar Chat' : 'Mostrar Chat' }}</span>
-                    </button>
                     
-                    <button @click="handleNotesToggle" class="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-primary flex items-center gap-2 lg:hidden">
+                    <button @click="handleNotesToggle" class="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-primary flex items-center gap-2">
                         <BookOpen class="w-4 h-4" :class="props.showNotes ? 'text-primary' : 'text-muted-foreground'" />
                         <span>{{ props.showNotes ? 'Ocultar Anotações' : 'Mostrar Anotações' }}</span>
                     </button>
@@ -510,25 +550,312 @@ function handleLeave() {
 
 
 ---
+## FILE: src/components/campaign/ChatAttackCard.vue
+```vue
+<script setup lang="ts">
+import { Sword, Dice5 } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import ChatRollResult from './ChatRollResult.vue'
+
+const props = defineProps<{
+    label: string
+    isOwn: boolean
+    attack: { formula: string; result: number; breakdown: string }
+    damagePending: boolean
+    damageFormula: string
+    damage: { formula: string; result: number; breakdown: string } | null
+    isWhisper?: boolean
+}>()
+
+const emit = defineEmits<{
+    (e: 'roll-damage', formula: string): void
+}>()
+</script>
+
+<template>
+    <div class="space-y-2">
+        <div class="flex items-center gap-2 font-bold" :class="isWhisper ? 'text-fuchsia-400' : 'text-amber-500'">
+            <Sword class="w-4 h-4" />
+            <span>{{ label }}</span>
+        </div>
+
+        <ChatRollResult title="Acerto" :formula="attack.formula" :breakdown="attack.breakdown" :result="attack.result" :color-scheme="isWhisper ? 'fuchsia' : 'amber'" />
+
+        <template v-if="damagePending">
+            <div class="mt-2 text-center">
+                <Button v-if="isOwn" size="sm" variant="secondary" @click="emit('roll-damage', damageFormula)"
+                    class="w-full bg-red-950/20 text-red-400 hover:bg-red-900/40 border border-red-900/50 h-8 text-xs">
+                    <Dice5 class="w-3.5 h-3.5 mr-1.5" />
+                    Rolar Dano ({{ damageFormula }})
+                </Button>
+                <div v-else class="text-xs text-red-500/50 italic py-1.5 border border-red-900/20 rounded bg-red-950/10">
+                    Dano pendente...
+                </div>
+            </div>
+        </template>
+        <template v-else-if="damage">
+            <ChatRollResult title="Dano 💥" :formula="damage.formula" :breakdown="damage.breakdown" :result="damage.result" color-scheme="red" />
+        </template>
+    </div>
+</template>
+
+```
+
+
+---
+## FILE: src/components/campaign/ChatMessage.vue
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Trash2, Dice5 } from 'lucide-vue-next'
+
+import ChatAttackCard from './ChatAttackCard.vue'
+import ChatRollResult from './ChatRollResult.vue'
+
+export interface ParsedMessage {
+    id: string
+    user_id: string
+    created_at: string
+    sender_name: string
+    character_name?: string
+    avatar_url?: string
+    type: 'text' | 'roll' | 'whisper' | 'system'
+    content: string
+    rollData?: any // O conteúdo parseado como JSON
+}
+
+const props = defineProps<{
+    message: ParsedMessage
+    isOwn: boolean
+    isDM: boolean
+}>()
+
+const emit = defineEmits<{
+    (e: 'delete', id: string): void
+    (e: 'roll-damage', id: string, formula: string): void
+}>()
+
+const displayName = computed(() => {
+    if (props.isDM && !props.message.character_name) return 'Mestre'
+    return props.message.character_name || props.message.sender_name || 'Desconhecido'
+})
+
+const timeStr = computed(() => {
+    return new Date(props.message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+})
+
+const initials = computed(() => {
+    return displayName.value.substring(0, 2).toUpperCase()
+})
+
+const avatarColors = computed(() => {
+    // Generate a consistent color based on name
+    const colors = ['bg-red-900/50 text-red-200', 'bg-blue-900/50 text-blue-200', 'bg-emerald-900/50 text-emerald-200', 'bg-amber-900/50 text-amber-200', 'bg-purple-900/50 text-purple-200', 'bg-pink-900/50 text-pink-200', 'bg-cyan-900/50 text-cyan-200']
+    const idx = Array.from(displayName.value).reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
+    return colors[idx]
+})
+
+function handleDelete() {
+    if (confirm('Tem certeza que deseja apagar esta mensagem?')) {
+        emit('delete', props.message.id)
+    }
+}
+</script>
+
+<template>
+    <div class="flex flex-col gap-1 relative group w-full animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <!-- Header: Avatar + Nome + Tempo -->
+        <div class="flex items-center gap-2">
+            <template v-if="message.type !== 'system'">
+                <img v-if="message.avatar_url" :src="message.avatar_url" class="w-6 h-6 rounded-full object-cover bg-zinc-800" />
+                <div v-else class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border border-white/5" :class="avatarColors">
+                    {{ initials }}
+                </div>
+            </template>
+            <span class="text-xs font-bold" :class="isOwn ? 'text-primary' : 'text-zinc-400'">
+                {{ displayName }}
+            </span>
+            <span v-if="message.type === 'whisper'"
+                class="text-[9px] uppercase font-bold text-fuchsia-400 bg-fuchsia-950/40 px-1 py-0.5 rounded border border-fuchsia-900/50">SUSSURRO</span>
+            <span class="text-[10px] text-muted-foreground ml-auto">{{ timeStr }}</span>
+            <button v-if="isOwn" @click="handleDelete" class="w-5 h-5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-zinc-500 hover:text-red-400 rounded hover:bg-zinc-800 cursor-pointer" title="Apagar mensagem">
+                <Trash2 class="w-3 h-3" />
+            </button>
+        </div>
+
+        <!-- Conteúdo -->
+        <div class="text-sm px-3 py-2 rounded-lg border break-words shadow-sm relative ml-8"
+            :class="[
+                message.type === 'roll' ? 'border-amber-500/20 bg-amber-950/10' : 
+                message.type === 'whisper' ? 'border-fuchsia-500/30 bg-fuchsia-950/10 text-fuchsia-100' : 
+                message.type === 'system' ? 'border-zinc-800 bg-zinc-900/30 text-zinc-400 italic text-center ml-0' :
+                'border-border/50 bg-zinc-900/80 text-zinc-200'
+            ]">
+            
+            <template v-if="message.type === 'roll' || (message.type === 'whisper' && message.rollData?.is_roll)">
+                <div v-if="message.rollData" class="space-y-1.5 pt-0.5">
+                    <template v-if="message.rollData.is_attack">
+                        <ChatAttackCard 
+                            :label="message.rollData.label"
+                            :is-own="isOwn"
+                            :attack="message.rollData.attack"
+                            :damage-pending="message.rollData.damage_pending"
+                            :damage-formula="message.rollData.damage_formula"
+                            :damage="message.rollData.damage"
+                            :is-whisper="message.type === 'whisper'"
+                            @roll-damage="(f) => emit('roll-damage', message.id, f)"
+                        />
+                    </template>
+                    <template v-else-if="message.rollData.is_dual_roll">
+                        <!-- Backward compatibility for old dual rolls -->
+                         <div class="flex items-center gap-2 font-bold mb-2" :class="message.type === 'whisper' ? 'text-fuchsia-400' : 'text-amber-500'">
+                            <Dice5 class="w-4 h-4" />
+                            <span>{{ message.rollData.label || 'Rolagem' }}</span>
+                        </div>
+                        <ChatRollResult title="Ataque" :formula="message.rollData.attack.formula" :breakdown="message.rollData.attack.breakdown" :result="message.rollData.attack.result" :color-scheme="message.type === 'whisper' ? 'fuchsia' : 'amber'" />
+                        <ChatRollResult title="Dano" :formula="message.rollData.damage.formula" :breakdown="message.rollData.damage.breakdown" :result="message.rollData.damage.result" color-scheme="red" />
+                    </template>
+                    <template v-else>
+                        <div class="flex items-center gap-2 font-bold mb-2" :class="message.type === 'whisper' ? 'text-fuchsia-400' : 'text-amber-500'">
+                            <Dice5 class="w-4 h-4" />
+                            <span>{{ message.rollData.label || 'Rolagem' }}</span>
+                        </div>
+                        <ChatRollResult :formula="message.rollData.formula" :breakdown="message.rollData.breakdown" :result="message.rollData.result" :color-scheme="message.type === 'whisper' ? 'fuchsia' : 'amber'" />
+                    </template>
+                </div>
+                <div v-else class="flex items-center gap-2 font-mono font-bold text-amber-500">
+                    <Dice5 class="w-4 h-4" />
+                    {{ message.content }}
+                </div>
+            </template>
+
+            <template v-else-if="message.type === 'whisper'">
+                {{ message.rollData?.text || message.content }}
+            </template>
+
+            <template v-else>
+                {{ message.content }}
+            </template>
+        </div>
+    </div>
+</template>
+
+```
+
+
+---
+## FILE: src/components/campaign/ChatRollResult.vue
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+
+const props = defineProps<{
+    title?: string
+    formula: string
+    breakdown: string
+    result: number
+    colorScheme?: 'amber' | 'red' | 'fuchsia' | 'emerald' | 'blue'
+}>()
+
+const colorClasses = computed(() => {
+    switch (props.colorScheme) {
+        case 'red':
+            return {
+                border: 'border-red-900/30',
+                title: 'text-red-500/70',
+                formula: 'text-red-500/50',
+                breakdown: 'text-red-500/80',
+                result: 'text-red-400'
+            }
+        case 'fuchsia':
+            return {
+                border: 'border-fuchsia-900/30',
+                title: 'text-fuchsia-500/70',
+                formula: 'text-fuchsia-500/60',
+                breakdown: 'text-fuchsia-500/90',
+                result: 'text-fuchsia-300'
+            }
+        case 'emerald':
+            return {
+                border: 'border-emerald-900/30',
+                title: 'text-emerald-500/70',
+                formula: 'text-emerald-500/50',
+                breakdown: 'text-emerald-500/80',
+                result: 'text-emerald-400'
+            }
+        case 'blue':
+            return {
+                border: 'border-blue-900/30',
+                title: 'text-blue-500/70',
+                formula: 'text-blue-500/50',
+                breakdown: 'text-blue-500/80',
+                result: 'text-blue-400'
+            }
+        case 'amber':
+        default:
+            return {
+                border: 'border-amber-900/30',
+                title: 'text-amber-500/70',
+                formula: 'text-amber-500/50',
+                breakdown: 'text-amber-500/80',
+                result: 'text-amber-300'
+            }
+    }
+})
+</script>
+
+<template>
+    <div class="flex flex-col gap-1 bg-black/20 p-2 rounded border relative mt-1" :class="colorClasses.border">
+        <div v-if="title"
+            class="absolute -top-2 left-2 text-[8px] bg-zinc-900 px-1 rounded-sm uppercase tracking-wider font-bold"
+            :class="colorClasses.title">
+            {{ title }}
+        </div>
+        <div class="flex items-center justify-between text-xs mt-1">
+            <span class="font-mono text-left flex-1" :class="colorClasses.formula" :title="formula">{{ formula || '?' }}</span>
+            <span class="font-mono text-right break-words max-w-[150px] leading-tight" :class="colorClasses.breakdown">{{ breakdown }}</span>
+        </div>
+        <div class="text-3xl font-black text-center tracking-tighter mt-1" :class="colorClasses.result">
+            {{ result }}
+        </div>
+    </div>
+</template>
+
+```
+
+
+---
 ## FILE: src/components/campaign/ChatSidebar.vue
 ```vue
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Send, Dice5 } from 'lucide-vue-next'
+import { Send } from 'lucide-vue-next'
 import { DiceRoller } from '@dice-roller/rpg-dice-roller'
+import ChatMessage from './ChatMessage.vue'
+import { useCampaignRolls } from '@/lib/useCampaignRolls'
 
 const roller = new DiceRoller()
 
 const props = defineProps<{
     campaignId: string
     memberName?: string
+    avatarUrl?: string | null
     members?: any[]
     dmId?: string
 }>()
+
+const recipientId = defineModel<string>('recipientId', { default: 'all' })
+
+const { rollDamage, deleteMessage } = useCampaignRolls(
+    props.campaignId, 
+    computed(() => props.memberName || ''), 
+    recipientId, 
+    computed(() => props.avatarUrl || null)
+)
 
 const authStore = useAuthStore()
 const messages = ref<any[]>([])
@@ -546,7 +873,7 @@ async function fetchMessages() {
 
     if (!error && data) {
         messages.value = data.map(m => {
-            if (m.type === 'roll' || m.type === 'whisper') {
+            if (['roll', 'whisper'].includes(m.type)) {
                 try { m.rollData = JSON.parse(m.content) } catch { }
             }
             return m
@@ -562,8 +889,6 @@ function scrollToBottom() {
         }
     })
 }
-
-const recipientId = defineModel<string>('recipientId', { default: 'all' })
 
 async function sendMessage() {
     if (!newMessage.value.trim()) return
@@ -609,6 +934,8 @@ async function sendMessage() {
             campaign_id: props.campaignId,
             user_id: authStore.user?.id,
             sender_name: senderName,
+            character_name: props.memberName || senderName,
+            avatar_url: props.avatarUrl || null,
             content: finalContent,
             type: type
         })
@@ -626,18 +953,31 @@ function setupRealtime() {
         .on(
             'postgres_changes',
             {
-                event: 'INSERT',
+                event: '*',
                 schema: 'public',
                 table: 'messages',
                 filter: `campaign_id=eq.${props.campaignId}`
             },
             (payload) => {
-                const newMsg = payload.new as any
-                if (newMsg.type === 'roll' || newMsg.type === 'whisper') {
-                    try { newMsg.rollData = JSON.parse(newMsg.content) } catch { }
+                if (payload.eventType === 'INSERT') {
+                    const newMsg = payload.new as any
+                    if (['roll', 'whisper'].includes(newMsg.type)) {
+                        try { newMsg.rollData = JSON.parse(newMsg.content) } catch { }
+                    }
+                    messages.value.push(newMsg)
+                    scrollToBottom()
+                } else if (payload.eventType === 'UPDATE') {
+                    const idx = messages.value.findIndex(m => m.id === payload.new.id)
+                    if (idx !== -1) {
+                        const updMsg = payload.new as any
+                        if (['roll', 'whisper'].includes(updMsg.type)) {
+                            try { updMsg.rollData = JSON.parse(updMsg.content) } catch { }
+                        }
+                        messages.value[idx] = updMsg
+                    }
+                } else if (payload.eventType === 'DELETE') {
+                    messages.value = messages.value.filter(m => m.id !== payload.old.id)
                 }
-                messages.value.push(newMsg)
-                scrollToBottom()
             }
         )
         .subscribe()
@@ -666,95 +1006,14 @@ onUnmounted(() => {
                 Nenhuma mensagem ainda.
             </div>
             <template v-for="msg in messages" :key="msg.id">
-                <div v-if="msg.type !== 'whisper' || msg.user_id === authStore.user?.id || (msg.rollData?.target_id && msg.rollData.target_id === authStore.user?.id) || authStore.user?.id === props.dmId"
-                    class="flex flex-col gap-1">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold"
-                            :class="msg.user_id === authStore.user?.id ? 'text-primary' : 'text-zinc-400'">
-                            {{ msg.sender_name }}
-                        </span>
-                        <span v-if="msg.type === 'whisper'"
-                            class="text-[10px] uppercase font-bold text-fuchsia-400 bg-fuchsia-950/40 px-1 py-0.5 rounded border border-fuchsia-900/50">SUSSURRO</span>
-                        <span class="text-[10px] text-muted-foreground">{{ new
-                            Date(msg.created_at).toLocaleTimeString([],
-                                { hour: '2-digit', minute: '2-digit' }) }}</span>
-                    </div>
-                    <div class="text-sm bg-zinc-900/80 px-3 py-2 rounded-lg border border-border/50 text-zinc-200 break-words"
-                        :class="[
-                            msg.type === 'roll' ? 'border-amber-500/30 bg-amber-950/10' : '',
-                            msg.type === 'whisper' ? 'border-fuchsia-500/30 bg-fuchsia-950/10 text-fuchsia-100' : ''
-                        ]">
-                        <div v-if="msg.type === 'roll' || (msg.type === 'whisper' && msg.rollData?.is_roll)"
-                            class="text-amber-400">
-                            <div v-if="msg.rollData" class="space-y-1.5 pt-0.5">
-                                <div class="flex items-center gap-2 font-bold"
-                                    :class="msg.type === 'whisper' ? 'text-fuchsia-400' : 'text-amber-500'">
-                                    <Dice5 class="w-4 h-4" />
-                                    <span>{{ msg.rollData.label || 'Rolagem' }}</span>
-                                </div>
-                                <div v-if="msg.rollData.is_dual_roll" class="flex flex-col gap-2">
-                                    <div class="flex flex-col gap-1 bg-black/20 p-2 rounded border relative"
-                                        :class="msg.type === 'whisper' ? 'border-fuchsia-900/30' : 'border-amber-900/30'">
-                                        <div
-                                            class="absolute -top-2 left-2 text-[8px] bg-zinc-900 px-1 rounded-sm text-amber-500/70 uppercase tracking-wider font-bold">
-                                            Ataque</div>
-                                        <div class="flex items-center justify-between text-xs mt-1">
-                                            <span class="font-mono"
-                                                :class="msg.type === 'whisper' ? 'text-fuchsia-500/60' : 'text-amber-500/50'"
-                                                title="Fórmula">{{ msg.rollData.attack.formula || '?' }}</span>
-                                            <span class="font-mono text-right break-words max-w-[150px] leading-tight"
-                                                :class="msg.type === 'whisper' ? 'text-fuchsia-500/90' : 'text-amber-500/80'">{{
-                                                    msg.rollData.attack.breakdown }}</span>
-                                        </div>
-                                        <div class="text-3xl font-black text-center tracking-tighter mt-1"
-                                            :class="msg.type === 'whisper' ? 'text-fuchsia-300' : 'text-amber-300'">
-                                            {{ msg.rollData.attack.result }}
-                                        </div>
-                                    </div>
-                                    <div
-                                        class="flex flex-col gap-1 bg-red-950/10 p-2 rounded border border-red-900/20 relative mt-1">
-                                        <div
-                                            class="absolute -top-2 left-2 text-[8px] bg-zinc-900 px-1 rounded-sm text-red-500/70 uppercase tracking-wider font-bold">
-                                            Dano / Efeito</div>
-                                        <div class="flex items-center justify-between text-xs mt-1">
-                                            <span class="font-mono text-red-500/50" title="Fórmula">{{
-                                                msg.rollData.damage.formula || '?' }}</span>
-                                            <span
-                                                class="font-mono text-right text-red-500/80 break-words max-w-[150px] leading-tight">{{
-                                                    msg.rollData.damage.breakdown }}</span>
-                                        </div>
-                                        <div class="text-3xl font-black text-center text-red-400 tracking-tighter mt-1">
-                                            {{ msg.rollData.damage.result }}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div v-else class="flex flex-col gap-1 bg-black/20 p-2 rounded border"
-                                    :class="msg.type === 'whisper' ? 'border-fuchsia-900/30' : 'border-amber-900/30'">
-                                    <div class="flex items-center justify-between text-xs">
-                                        <span class="font-mono"
-                                            :class="msg.type === 'whisper' ? 'text-fuchsia-500/60' : 'text-amber-500/50'"
-                                            title="Fórmula">{{ msg.rollData.formula ||
-                                                '?' }}</span>
-                                        <span class="font-mono text-right break-words max-w-[150px] leading-tight"
-                                            :class="msg.type === 'whisper' ? 'text-fuchsia-500/90' : 'text-amber-500/80'">{{
-                                                msg.rollData.breakdown }}</span>
-                                    </div>
-                                    <div class="text-3xl font-black text-center tracking-tighter mt-1"
-                                        :class="msg.type === 'whisper' ? 'text-fuchsia-300' : 'text-amber-300'">
-                                        {{ msg.rollData.result }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div v-else class="flex items-center gap-2 font-mono font-bold">
-                                <!-- Fallback for old roll messages -->
-                                <Dice5 class="w-4 h-4" />
-                                {{ msg.content }}
-                            </div>
-                        </div>
-                        <span v-else-if="msg.type === 'whisper'">{{ msg.rollData?.text || msg.content }}</span>
-                        <span v-else>{{ msg.content }}</span>
-                    </div>
-                </div>
+                <ChatMessage 
+                  v-if="msg.type !== 'whisper' || msg.user_id === authStore.user?.id || (msg.rollData?.target_id && msg.rollData.target_id === authStore.user?.id) || authStore.user?.id === props.dmId"
+                  :message="msg"
+                  :is-own="msg.user_id === authStore.user?.id"
+                  :is-d-m="authStore.user?.id === props.dmId"
+                  @delete="(id) => deleteMessage(id)"
+                  @roll-damage="rollDamage"
+                />
             </template>
         </div>
 
@@ -1026,6 +1285,998 @@ async function joinCampaign() {
 
 
 ---
+## FILE: src/components/campaign/notepad/NotepadEditor.vue
+```vue
+<template>
+  <div class="flex flex-col h-full bg-background overflow-hidden relative">
+    <div class="flex-1 overflow-y-auto w-full max-w-full">
+      <EditorContent :editor="editor" class="h-full focus:outline-none" />
+    </div>
+    <NotepadToolbar v-if="editor" :editor="editor" :saving="saving" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { watch, onBeforeUnmount } from 'vue'
+import { useEditor, EditorContent } from '@tiptap/vue-3'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import Highlight from '@tiptap/extension-highlight'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
+import NotepadToolbar from './NotepadToolbar.vue'
+
+const props = defineProps<{
+  content: Record<string, any>
+  noteId: string
+  saving: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'update', content: Record<string, any>): void
+}>()
+
+const editor = useEditor({
+  content: props.content?.type ? props.content : { type: 'doc', content: [{ type: 'paragraph' }] },
+  extensions: [
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+    }),
+    Placeholder.configure({
+      placeholder: 'Comece a escrever suas anotações...',
+    }),
+    Highlight,
+    TaskList,
+    TaskItem.configure({
+      nested: true,
+    }),
+  ],
+  onUpdate: ({ editor }) => {
+    emit('update', editor.getJSON())
+  },
+  editorProps: {
+    attributes: {
+      class: 'prose prose-invert prose-sm max-w-none focus:outline-none min-h-full p-4 w-full prose-headings:font-bold prose-p:leading-relaxed prose-a:text-primary outline-none',
+    },
+  },
+})
+
+watch(() => props.noteId, () => {
+  if (editor.value) {
+    // Only update content if note changed, wait for next tick
+    setTimeout(() => {
+        editor.value?.commands.setContent(props.content?.type ? props.content : { type: 'doc', content: [{ type: 'paragraph' }] })
+    }, 10)
+  }
+})
+
+onBeforeUnmount(() => {
+  editor.value?.destroy()
+})
+</script>
+
+<style>
+/* Tiptap Checkbox styling */
+ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+ul[data-type="taskList"] p {
+  margin: 0;
+}
+
+ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.25rem;
+  gap: 0.5rem;
+}
+
+ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  user-select: none;
+}
+
+ul[data-type="taskList"] li > label input {
+    margin-top: 5px;
+}
+
+ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+}
+
+ul[data-type="taskList"] ul[data-type="taskList"] {
+  margin: 0;
+}
+</style>
+
+```
+
+
+---
+## FILE: src/components/campaign/notepad/NotepadPanel.vue
+```vue
+<template>
+  <div v-show="visible" class="flex flex-col h-full w-full lg:w-[480px] bg-background border-r border-border shrink-0 z-40 relative overflow-hidden">
+
+    <!-- ── Top Header ────────────────────────────────────── -->
+    <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-card shrink-0 min-h-[44px]">
+      <div class="flex items-center gap-2">
+        <!-- Back button: only when viewing a note on narrow screens -->
+        <button
+          v-if="notepad.activeNote.value && showEditor"
+          @click="goBack"
+          class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title="Voltar para arquivos"
+        >
+          <ArrowLeft class="w-4 h-4" />
+        </button>
+
+        <BookOpen class="w-4 h-4 text-primary shrink-0" />
+
+        <span class="font-semibold text-sm truncate max-w-[200px]">
+          <template v-if="showEditor && notepad.activeNote.value">
+            {{ notepad.activeNote.value.title }}
+          </template>
+          <template v-else>
+            Anotações
+          </template>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <!-- New folder / new note shortcuts in tree view -->
+        <template v-if="!showEditor">
+          <button @click="notepad.createFolder(null)" class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Nova Pasta">
+            <FolderPlus class="w-4 h-4" />
+          </button>
+          <button @click="notepad.createNote(null).then(openEditorAfterCreate)" class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Nova Nota">
+            <FilePlus class="w-4 h-4" />
+          </button>
+        </template>
+
+        <button @click="$emit('close')" class="p-1.5 hover:bg-muted rounded-md text-muted-foreground" title="Fechar">
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Body ──────────────────────────────────────────── -->
+    <div class="flex flex-1 overflow-hidden relative">
+
+      <!-- Loading overlay -->
+      <div v-if="notepad.loading.value" class="absolute inset-0 flex items-center justify-center bg-background/70 z-20">
+        <Loader2 class="w-7 h-7 animate-spin text-primary" />
+      </div>
+
+      <!-- Sidebar (file tree) — always visible on lg, slides in/out on smaller -->
+      <Transition name="slide-left">
+        <NotepadSidebar
+          v-show="!showEditor"
+          class="w-full h-full"
+          :tree="notepad.tree.value"
+          :active-note-id="notepad.activeNoteId.value"
+          :expanded-folders="notepad.expandedFolders.value"
+          @select="handleSelect"
+          @toggle-folder="notepad.toggleFolder"
+          @create-note="notepad.createNote"
+          @create-folder="notepad.createFolder"
+          @rename="notepad.renameItem"
+          @delete="notepad.deleteItem"
+          @move="notepad.moveItem"
+        />
+      </Transition>
+
+      <!-- Editor pane -->
+      <Transition name="slide-right">
+        <div
+          v-show="showEditor"
+          class="flex-1 flex flex-col h-full bg-card border-l border-border absolute inset-0 lg:relative"
+        >
+          <NotepadEditor
+            v-if="notepad.activeNote.value"
+            :note-id="notepad.activeNote.value.id"
+            :content="notepad.activeNote.value.content"
+            :saving="notepad.saving.value"
+            @update="(content) => notepad.updateNoteContent(notepad.activeNote.value!.id, content)"
+          />
+          <!-- Empty state on lg desktop when no note is selected -->
+          <div v-else class="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
+            <BookOpen class="w-14 h-14 mb-4 text-muted-foreground/20" />
+            <h3 class="font-medium text-base mb-1 text-foreground">Bloco de Notas</h3>
+            <p class="text-xs max-w-[220px]">Selecione uma nota na lista ou crie uma nova para começar.</p>
+          </div>
+        </div>
+      </Transition>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, watch } from 'vue'
+import { BookOpen, X, Loader2, ArrowLeft, FolderPlus, FilePlus } from 'lucide-vue-next'
+import NotepadSidebar from './NotepadSidebar.vue'
+import NotepadEditor from './NotepadEditor.vue'
+import { useNotepad } from './useNotepad'
+
+const props = defineProps<{
+  campaignId: string
+  visible: boolean
+}>()
+
+defineEmits<{
+  (e: 'close'): void
+}>()
+
+const notepad = useNotepad(props.campaignId)
+
+// Controls which pane is active on mobile.
+// On lg screens both panes are always shown side by side.
+const showEditor = ref(false)
+
+function handleSelect(id: string) {
+  notepad.selectNote(id)
+  showEditor.value = true
+}
+
+function goBack() {
+  showEditor.value = false
+}
+
+function openEditorAfterCreate(id: string | null) {
+  if (id) showEditor.value = true
+}
+
+onMounted(async () => {
+  if (props.campaignId) {
+    await notepad.fetchNotes()
+    // On desktop, if there's already a note, show the editor
+    if (notepad.activeNote.value) {
+      showEditor.value = true
+    }
+  }
+})
+
+watch(() => props.campaignId, async () => {
+  if (props.campaignId) {
+    await notepad.fetchNotes()
+  }
+})
+
+// Reset to tree view when panel is closed then reopened
+watch(() => props.visible, (v) => {
+  if (v && !notepad.activeNote.value) {
+    showEditor.value = false
+  }
+})
+</script>
+
+<style scoped>
+/* Slide LEFT → show sidebar */
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  position: absolute;
+  inset: 0;
+}
+.slide-left-enter-from { transform: translateX(-100%); opacity: 0; }
+.slide-left-leave-to  { transform: translateX(-100%); opacity: 0; }
+
+/* Slide RIGHT → show editor */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  position: absolute;
+  inset: 0;
+}
+.slide-right-enter-from { transform: translateX(100%); opacity: 0; }
+.slide-right-leave-to  { transform: translateX(100%); opacity: 0; }
+</style>
+
+```
+
+
+---
+## FILE: src/components/campaign/notepad/NotepadSidebar.vue
+```vue
+<template>
+  <div class="flex flex-col h-full w-full bg-background overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto py-2 pr-1 custom-scrollbar relative">
+      <div v-if="tree.length === 0" class="text-xs text-muted-foreground text-center p-4">
+        Nenhuma anotação.<br>Crie uma nova nota ou pasta para começar.
+      </div>
+      
+      <!-- Root drop zone top -->
+      <div class="h-2 mx-2 transition-colors relative z-10 rounded-full"
+           :class="isDropTop ? 'bg-primary' : 'bg-transparent hover:bg-muted'"
+           @dragover.prevent="isDropTop = true"
+           @dragleave.prevent="isDropTop = false"
+           @drop="onDropTop" />
+
+      <NotepadTreeItem
+        v-for="node in tree"
+        :key="node.item.id"
+        :node="node"
+        :depth="0"
+        :active-note-id="activeNoteId"
+        :expanded-folders="expandedFolders"
+        @select="$emit('select', $event)"
+        @toggle-folder="$emit('toggle-folder', $event)"
+        @move="$emit('move', $event.itemId, $event.newParentId, $event.newIndex)"
+        @rename="$emit('rename', $event.id, $event.newTitle)"
+        @delete="$emit('delete', $event)"
+        @create-note="$emit('create-note', $event)"
+        @create-folder="$emit('create-folder', $event)"
+      />
+      
+      <!-- Root drop zone bottom -->
+      <div class="h-8 mx-2 mt-2 transition-colors rounded flex items-center justify-center text-xs text-muted-foreground border-2 border-dashed border-transparent relative z-10"
+           :class="isDropBottom ? 'border-primary bg-primary/10 text-primary' : 'hover:border-border'"
+           @dragover.prevent="isDropBottom = true"
+           @dragleave.prevent="isDropBottom = false"
+           @drop="onDropBottom">
+        {{ isDropBottom ? 'Soltar na raiz' : '' }}
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import NotepadTreeItem from './NotepadTreeItem.vue'
+import type { TreeNode } from './useNotepad'
+
+const props = defineProps<{
+  tree: TreeNode[]
+  activeNoteId: string | null
+  expandedFolders: Set<string>
+}>()
+
+const emit = defineEmits<{
+  (e: 'select', id: string): void
+  (e: 'toggle-folder', id: string): void
+  (e: 'create-note', parentId: string | null): void
+  (e: 'create-folder', parentId: string | null): void
+  (e: 'rename', id: string, newTitle: string): void
+  (e: 'delete', id: string): void
+  (e: 'move', itemId: string, newParentId: string | null, newIndex: number): void
+}>()
+
+const isDropTop = ref(false)
+const isDropBottom = ref(false)
+
+function onDropTop(e: DragEvent) {
+  isDropTop.value = false
+  const draggedId = e.dataTransfer?.getData('text/plain')
+  if (!draggedId) return
+  emit('move', draggedId, null, 0)
+}
+
+function onDropBottom(e: DragEvent) {
+  isDropBottom.value = false
+  const draggedId = e.dataTransfer?.getData('text/plain')
+  if (!draggedId) return
+  emit('move', draggedId, null, props.tree.length)
+}
+</script>
+
+```
+
+
+---
+## FILE: src/components/campaign/notepad/NotepadToolbar.vue
+```vue
+<template>
+  <div class="flex items-center gap-1 p-2 border-t border-border bg-background shrink-0 flex-wrap">
+    <button @click="editor.chain().focus().toggleBold().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('bold') }]" title="Negrito">
+      <Bold class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleItalic().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('italic') }]" title="Itálico">
+      <Italic class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleStrike().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('strike') }]" title="Tachado">
+      <Strikethrough class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleHighlight().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('highlight') }]" title="Destacar">
+      <Highlighter class="w-4 h-4" />
+    </button>
+    <div class="w-px h-4 bg-border mx-1"></div>
+    <button @click="editor.chain().focus().toggleHeading({ level: 1 }).run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('heading', { level: 1 }) }]" title="Título 1">
+      <Heading1 class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleHeading({ level: 2 }).run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('heading', { level: 2 }) }]" title="Título 2">
+      <Heading2 class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleHeading({ level: 3 }).run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('heading', { level: 3 }) }]" title="Título 3">
+      <Heading3 class="w-4 h-4" />
+    </button>
+    <div class="w-px h-4 bg-border mx-1"></div>
+    <button @click="editor.chain().focus().toggleBulletList().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('bulletList') }]" title="Lista Marcadores">
+      <List class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleOrderedList().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('orderedList') }]" title="Lista Numérica">
+      <ListOrdered class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleTaskList().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('taskList') }]" title="Checklist">
+      <CheckSquare class="w-4 h-4" />
+    </button>
+    <div class="w-px h-4 bg-border mx-1"></div>
+    <button @click="editor.chain().focus().toggleBlockquote().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('blockquote') }]" title="Citação">
+      <Quote class="w-4 h-4" />
+    </button>
+    <button @click="editor.chain().focus().toggleCodeBlock().run()" :class="['p-1.5 rounded hover:bg-muted', { 'bg-primary/20 text-primary': editor.isActive('codeBlock') }]" title="Bloco de código">
+      <Code class="w-4 h-4" />
+    </button>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-1.5 text-xs text-muted-foreground mr-2">
+      <template v-if="saving">
+        <Loader2 class="w-3 h-3 animate-spin" />
+        Salvando...
+      </template>
+      <template v-else>
+        <Check class="w-3 h-3 text-green-500" />
+        Salvo ✓
+      </template>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { 
+  Bold, Italic, Strikethrough, Highlighter, 
+  Heading1, Heading2, Heading3, 
+  List, ListOrdered, CheckSquare, 
+  Quote, Code, Loader2, Check 
+} from 'lucide-vue-next'
+import { Editor } from '@tiptap/vue-3'
+
+defineProps<{
+  editor: Editor
+  saving: boolean
+}>()
+</script>
+
+```
+
+
+---
+## FILE: src/components/campaign/notepad/NotepadTreeItem.vue
+```vue
+<template>
+  <div
+    :draggable="true"
+    @dragstart.stop="onDragStart"
+    @dragover.prevent.stop="onDragOver"
+    @dragleave.prevent.stop="onDragLeave"
+    @drop.stop="onDrop"
+    :class="[
+      'select-none',
+      { 'bg-primary/10 border-r-2 border-primary': isActive },
+      { 'border-l-2 border-primary bg-primary/5': isDragOver && node.item.is_folder }
+    ]"
+  >
+    <div class="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer hover:bg-muted/50 rounded group relative"
+         :style="{ paddingLeft: `${depth * 16 + 8}px` }"
+         @click="handleClick"
+         @dblclick="startRename"
+         @contextmenu.prevent>
+      
+      <ChevronRight v-if="node.item.is_folder" 
+        class="w-3.5 h-3.5 text-muted-foreground transition-transform shrink-0" 
+        :class="{ 'rotate-90': isExpanded }" />
+      <span v-else class="w-3.5 shrink-0" />
+      
+      <FolderOpen v-if="node.item.is_folder && isExpanded" class="w-4 h-4 text-amber-500 shrink-0" />
+      <Folder v-else-if="node.item.is_folder" class="w-4 h-4 text-amber-500/70 shrink-0" />
+      <FileText v-else class="w-4 h-4 text-muted-foreground shrink-0 flex-shrink-0" />
+      
+      <input v-if="isRenaming" v-model="renameValue" 
+        class="text-sm bg-background border border-border rounded px-1.5 py-0.5 w-full outline-none focus:border-primary" 
+        @blur="confirmRename" @keydown.enter="confirmRename" @keydown.escape="cancelRename"
+        ref="renameInput" />
+      <span v-else class="text-sm truncate flex-1" :class="isActive ? 'text-foreground font-medium' : 'text-muted-foreground'">
+        {{ node.item.title }}
+      </span>
+
+      <!-- Context Menu via custom div -->
+      <div class="relative" ref="menuRef">
+        <button @click.stop="toggleMenu" class="w-5 h-5 flex items-center justify-center rounded hover:bg-muted opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+          <MoreVertical class="w-4 h-4" />
+        </button>
+        
+        <div v-if="showMenu" class="absolute right-0 top-full mt-1 w-48 rounded-md bg-zinc-950 border border-zinc-800 shadow-lg py-1 z-[60] overflow-hidden" @click.stop>
+          <button v-if="node.item.is_folder" @click="handleAction('create-note')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+            <FileText class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Nova nota aqui
+          </button>
+          <button v-if="node.item.is_folder" @click="handleAction('create-folder')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+            <FolderPlus class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Nova pasta aqui
+          </button>
+          <div v-if="node.item.is_folder" class="h-px bg-zinc-800 my-1"></div>
+          <button @click="handleAction('rename')" class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-white flex items-center">
+            <Edit2 class="w-3.5 h-3.5 mr-2 text-muted-foreground" /> Renomear
+          </button>
+          <div class="h-px bg-zinc-800 my-1"></div>
+          <button @click="handleAction('delete')" class="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 flex items-center">
+            <Trash2 class="w-3.5 h-3.5 mr-2" /> Excluir
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <div v-if="node.item.is_folder && isExpanded" class="children overflow-hidden">
+      <!-- Drop zone at top of folder -->
+      <div class="h-1 mx-4 transition-colors relative z-10 rounded-full"
+           :class="isDropTop ? 'bg-primary' : 'bg-transparent hover:bg-muted'"
+           @dragover.prevent.stop="isDropTop = true"
+           @dragleave.prevent.stop="isDropTop = false"
+           @drop.stop="onDropTop" />
+
+      <NotepadTreeItem
+        v-for="child in node.children"
+        :key="child.item.id"
+        :node="child"
+        :depth="depth + 1"
+        :active-note-id="activeNoteId"
+        :expanded-folders="expandedFolders"
+        @select="$emit('select', $event)"
+        @toggle-folder="$emit('toggle-folder', $event)"
+        @move="$emit('move', $event)"
+        @rename="$emit('rename', $event)"
+        @delete="$emit('delete', $event)"
+        @create-note="$emit('create-note', $event)"
+        @create-folder="$emit('create-folder', $event)"
+      />
+      
+      <!-- Drop zone visual no final da pasta -->
+      <div class="h-2 mx-4 transition-colors relative z-10 rounded-full"
+           :class="isDropBottom ? 'bg-primary' : 'bg-transparent hover:bg-muted'"
+           @dragover.prevent.stop="isDropBottom = true"
+           @dragleave.prevent.stop="isDropBottom = false"
+           @drop.stop="onDropBottom" />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, nextTick } from 'vue'
+import { 
+  ChevronRight, Folder, FolderOpen, FileText, 
+  MoreVertical, Trash2, Edit2, FolderPlus 
+} from 'lucide-vue-next'
+import { onClickOutside } from '@vueuse/core'
+import type { TreeNode } from './useNotepad'
+
+const props = defineProps<{
+  node: TreeNode
+  depth: number
+  activeNoteId: string | null
+  expandedFolders: Set<string>
+}>()
+
+const emit = defineEmits<{
+  (e: 'select', id: string): void
+  (e: 'toggle-folder', id: string): void
+  (e: 'move', data: { itemId: string, newParentId: string | null, newIndex: number }): void
+  (e: 'rename', data: { id: string, newTitle: string }): void
+  (e: 'delete', id: string): void
+  (e: 'create-note', parentId: string | null): void
+  (e: 'create-folder', parentId: string | null): void
+}>()
+
+const isExpanded = computed(() => props.expandedFolders.has(props.node.item.id))
+const isActive = computed(() => props.activeNoteId === props.node.item.id)
+
+const isRenaming = ref(false)
+const renameValue = ref('')
+const renameInput = ref<HTMLInputElement | null>(null)
+
+const menuRef = ref<HTMLElement | null>(null)
+const showMenu = ref(false)
+
+onClickOutside(menuRef, () => {
+  showMenu.value = false
+})
+
+function toggleMenu() {
+  showMenu.value = !showMenu.value
+}
+
+function handleAction(action: 'create-note' | 'create-folder' | 'rename' | 'delete') {
+  showMenu.value = false
+  if (action === 'create-note') emit('create-note', props.node.item.id)
+  if (action === 'create-folder') emit('create-folder', props.node.item.id)
+  if (action === 'rename') startRename()
+  if (action === 'delete') confirmDelete()
+}
+
+function handleClick() {
+  if (props.node.item.is_folder) {
+    emit('toggle-folder', props.node.item.id)
+  } else {
+    emit('select', props.node.item.id)
+  }
+}
+
+function startRename() {
+  renameValue.value = props.node.item.title
+  isRenaming.value = true
+  nextTick(() => {
+    renameInput.value?.focus()
+    renameInput.value?.select()
+  })
+}
+
+function confirmRename() {
+  if (isRenaming.value) {
+    isRenaming.value = false
+    if (renameValue.value.trim() && renameValue.value !== props.node.item.title) {
+      emit('rename', { id: props.node.item.id, newTitle: renameValue.value.trim() })
+    }
+  }
+}
+
+function cancelRename() {
+  isRenaming.value = false
+}
+
+function confirmDelete() {
+  if (window.confirm(`Tem certeza que deseja excluir "${props.node.item.title}"?`)) {
+    emit('delete', props.node.item.id)
+  }
+}
+
+// Drag functionality
+const isDragOver = ref(false)
+const isDropTop = ref(false)
+const isDropBottom = ref(false)
+
+function onDragStart(e: DragEvent) {
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', props.node.item.id)
+  }
+}
+
+function onDragOver(_e: DragEvent) {
+  if (props.node.item.is_folder) {
+    isDragOver.value = true
+  }
+}
+
+function onDragLeave() {
+  isDragOver.value = false
+}
+
+function onDrop(e: DragEvent) {
+  isDragOver.value = false
+  const draggedId = e.dataTransfer?.getData('text/plain')
+  if (!draggedId || draggedId === props.node.item.id) return
+
+  // Drop into folder
+  if (props.node.item.is_folder) {
+    emit('move', { itemId: draggedId, newParentId: props.node.item.id, newIndex: 0 })
+    // Ensure folder is toggled open
+    if (!isExpanded.value) {
+      emit('toggle-folder', props.node.item.id)
+    }
+  }
+}
+
+function onDropTop(e: DragEvent) {
+  isDropTop.value = false
+  const draggedId = e.dataTransfer?.getData('text/plain')
+  if (!draggedId || draggedId === props.node.item.id) return
+  emit('move', { itemId: draggedId, newParentId: props.node.item.id, newIndex: 0 })
+}
+
+function onDropBottom(e: DragEvent) {
+  isDropBottom.value = false
+  const draggedId = e.dataTransfer?.getData('text/plain')
+  if (!draggedId || draggedId === props.node.item.id) return
+  emit('move', { itemId: draggedId, newParentId: props.node.item.id, newIndex: props.node.children.length })
+}
+</script>
+
+```
+
+
+---
+## FILE: src/components/campaign/notepad/useNotepad.ts
+```typescript
+import { ref, computed } from 'vue'
+import { supabase } from '@/lib/supabase'
+import { useDebounceFn } from '@vueuse/core'
+
+export interface NoteItem {
+    id: string
+    title: string
+    content: Record<string, any>
+    parent_id: string | null
+    is_folder: boolean
+    sort_order: number
+    created_at: string
+    updated_at: string
+}
+
+export interface TreeNode {
+    item: NoteItem
+    children: TreeNode[]
+}
+
+export function useNotepad(campaignId: string) {
+    const items = ref<NoteItem[]>([])
+    const activeNoteId = ref<string | null>(null)
+    const expandedFolders = ref<Set<string>>(new Set())
+    const loading = ref(true)
+    const saving = ref(false)
+
+    const tree = computed(() => buildTree(items.value, null))
+
+    const activeNote = computed(() =>
+        items.value.find(i => i.id === activeNoteId.value) ?? null
+    )
+
+    function buildTree(allItems: NoteItem[], parentId: string | null): TreeNode[] {
+        return allItems
+            .filter(i => i.parent_id === parentId)
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map(item => ({
+                item,
+                children: item.is_folder ? buildTree(allItems, item.id) : []
+            }))
+    }
+
+    async function fetchNotes() {
+        loading.value = true
+        try {
+            const { data: userData } = await supabase.auth.getUser()
+            if (!userData.user) throw new Error('User not authenticated')
+
+            const { data, error } = await supabase
+                .from('campaign_notes')
+                .select('*')
+                .eq('campaign_id', campaignId)
+                .eq('user_id', userData.user.id)
+                .order('sort_order', { ascending: true })
+
+            if (error) throw error
+            items.value = data as NoteItem[]
+        } catch (e) {
+            console.error('Error fetching notes:', e)
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function createNote(parentId: string | null = null): Promise<string | null> {
+        try {
+            const { data: userData } = await supabase.auth.getUser()
+            if (!userData.user) return null
+
+            const siblings = items.value.filter(i => i.parent_id === parentId)
+            const maxSort = siblings.length > 0 ? Math.max(...siblings.map(s => s.sort_order)) : -1
+
+            const newNote = {
+                campaign_id: campaignId,
+                user_id: userData.user.id,
+                title: 'Nova Nota',
+                content: { type: 'doc', content: [] }, // Default empty tip-tap
+                parent_id: parentId,
+                is_folder: false,
+                sort_order: maxSort + 1
+            }
+
+            const { data, error } = await supabase
+                .from('campaign_notes')
+                .insert(newNote)
+                .select()
+                .single()
+
+            if (error) throw error
+
+            items.value.push(data)
+            activeNoteId.value = data.id
+            if (parentId) expandedFolders.value.add(parentId)
+            return data.id
+        } catch (e) {
+            console.error('Error creating note:', e)
+            return null
+        }
+    }
+
+    async function createFolder(parentId: string | null = null): Promise<string | null> {
+        try {
+            const { data: userData } = await supabase.auth.getUser()
+            if (!userData.user) return null
+
+            const siblings = items.value.filter(i => i.parent_id === parentId)
+            const maxSort = siblings.length > 0 ? Math.max(...siblings.map(s => s.sort_order)) : -1
+
+            const newFolder = {
+                campaign_id: campaignId,
+                user_id: userData.user.id,
+                title: 'Nova Pasta',
+                content: {}, // Folders dont need content
+                parent_id: parentId,
+                is_folder: true,
+                sort_order: maxSort + 1
+            }
+
+            const { data, error } = await supabase
+                .from('campaign_notes')
+                .insert(newFolder)
+                .select()
+                .single()
+
+            if (error) throw error
+
+            items.value.push(data)
+            if (parentId) expandedFolders.value.add(parentId)
+            return data.id
+        } catch (e) {
+            console.error('Error creating folder:', e)
+            return null
+        }
+    }
+
+    const debouncedSave = useDebounceFn(async (id: string, content: object) => {
+        saving.value = true
+        try {
+            const item = items.value.find(i => i.id === id)
+            if (item) item.content = content
+
+            const { error } = await supabase
+                .from('campaign_notes')
+                .update({ content, updated_at: new Date().toISOString() })
+                .eq('id', id)
+
+            if (error) throw error
+        } catch (e) {
+            console.error('Error saving content:', e)
+        } finally {
+            saving.value = false
+        }
+    }, 1000)
+
+    async function updateNoteContent(id: string, content: object) {
+        const item = items.value.find(i => i.id === id)
+        if (item) item.content = content
+        saving.value = true
+        debouncedSave(id, content)
+    }
+
+    async function renameItem(id: string, newTitle: string) {
+        const item = items.value.find(i => i.id === id)
+        if (item) {
+            item.title = newTitle
+            try {
+                await supabase
+                    .from('campaign_notes')
+                    .update({ title: newTitle })
+                    .eq('id', id)
+            } catch (e) {
+                console.error('Error renaming:', e)
+            }
+        }
+    }
+
+    async function deleteItem(id: string) {
+        // Cascades handles db, do local changes
+        function getChildrenIds(currentId: string): string[] {
+            const children = items.value.filter(i => i.parent_id === currentId).map(i => i.id)
+            return children.concat(...children.flatMap(getChildrenIds))
+        }
+        const toDeleteIds = [id, ...getChildrenIds(id)]
+
+        items.value = items.value.filter(i => !toDeleteIds.includes(i.id))
+        if (activeNoteId.value && toDeleteIds.includes(activeNoteId.value)) {
+            activeNoteId.value = null
+        }
+
+        try {
+            await supabase.from('campaign_notes').delete().eq('id', id)
+        } catch (e) {
+            console.error('Error deleting:', e)
+        }
+    }
+
+    function isDescendant(potentialParentId: string, itemId: string): boolean {
+        let current = items.value.find(i => i.id === potentialParentId)
+        while (current) {
+            if (current.id === itemId) return true
+            current = items.value.find(i => i.id === current!.parent_id)
+        }
+        return false
+    }
+
+    async function moveItem(itemId: string, newParentId: string | null, newSortOrder: number) {
+        if (itemId === newParentId) return
+        if (newParentId && isDescendant(newParentId, itemId)) return // Prevent loop
+
+        const item = items.value.find(i => i.id === itemId)
+        if (!item) return
+
+        const oldSiblings = items.value.filter(i => i.parent_id === item.parent_id && i.id !== itemId)
+        oldSiblings.sort((a, b) => a.sort_order - b.sort_order)
+        oldSiblings.forEach((sib, index) => { sib.sort_order = index })
+
+        const newSiblings = items.value.filter(i => i.parent_id === newParentId && i.id !== itemId)
+        newSiblings.sort((a, b) => a.sort_order - b.sort_order)
+        newSiblings.splice(newSortOrder, 0, item)
+        newSiblings.forEach((sib, index) => { sib.sort_order = index })
+
+        item.parent_id = newParentId
+
+        try {
+            const updates = [
+                ...oldSiblings.map(s => ({ id: s.id, sort_order: s.sort_order })),
+                ...newSiblings.map(s => ({ id: s.id, parent_id: s.parent_id, sort_order: s.sort_order }))
+            ]
+
+            for (const update of updates) {
+                await supabase.from('campaign_notes').update(update).eq('id', update.id)
+            }
+        } catch (e) {
+            console.error('Error moving:', e)
+        }
+    }
+
+    async function reorderItems(parentId: string | null, orderedIds: string[]) {
+        const updates: { id: string, sort_order: number }[] = []
+        orderedIds.forEach((id, index) => {
+            const item = items.value.find(i => i.id === id)
+            if (item) {
+                item.sort_order = index
+                item.parent_id = parentId
+                updates.push({ id, sort_order: index })
+            }
+        })
+
+        try {
+            for (const update of updates) {
+                await supabase.from('campaign_notes').update({ sort_order: update.sort_order, parent_id: parentId }).eq('id', update.id)
+            }
+        } catch (e) {
+            console.error('Error reordering:', e)
+        }
+    }
+
+    function selectNote(id: string) {
+        const item = items.value.find(i => i.id === id)
+        if (item && !item.is_folder) {
+            activeNoteId.value = id
+        }
+    }
+
+    function toggleFolder(id: string) {
+        if (expandedFolders.value.has(id)) {
+            expandedFolders.value.delete(id)
+        } else {
+            expandedFolders.value.add(id)
+        }
+    }
+
+    return {
+        items, tree, activeNote, activeNoteId,
+        expandedFolders, loading, saving,
+        fetchNotes, createNote, createFolder,
+        updateNoteContent, renameItem, deleteItem,
+        moveItem, reorderItems, debouncedSave,
+        selectNote, toggleFolder
+    }
+}
+
+```
+
+
+---
 ## FILE: src/components/campaign/QuickNpcModal.vue
 ```vue
 <script setup lang="ts">
@@ -1074,7 +2325,6 @@ async function save() {
         saves: {},
         equipment: [],
         feats: [],
-        spells: [],
         bonuses: {
             ca: npc.value.ac - 10, // Assuming base CA is 10
             fort: 0,
@@ -1510,35 +2760,32 @@ const props = defineProps<{
   <div v-if="vertical"
     class="rounded-xl border border-zinc-800 bg-zinc-950/80 h-full flex flex-col">
 
-    <!-- Header rotated vertically -->
-    <div class="flex items-center justify-center py-3 border-b border-zinc-800">
-      <span
-        class="text-[10px] font-black uppercase tracking-widest text-zinc-500"
-        style="writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.2em;">
-        Atributos
-      </span>
+    <!-- Standard Header -->
+    <div class="flex items-center gap-2 px-4 py-3 border-b border-zinc-800/50">
+      <Dices class="w-4 h-4 text-zinc-400" />
+      <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Atributos</span>
     </div>
 
     <!-- Stats stacked -->
-    <div class="flex flex-col flex-1 divide-y divide-zinc-800/50 justify-evenly">
+    <div class="flex flex-col flex-1 p-2 gap-1 justify-evenly">
       <div
         v-for="key in ATTR_KEYS" :key="key"
         class="flex flex-col items-center justify-center cursor-pointer transition-all duration-200
-               hover:bg-primary/5 active:scale-95 select-none py-2 px-1"
+               hover:bg-primary/5 hover:border-primary/20 border border-transparent rounded-lg active:scale-95 select-none py-3 px-2"
         @click="onRoll(ATTR_LABELS[key] || key.toUpperCase(), '1d20 + @' + key + 'Mod')"
       >
-        <div class="text-[9px] font-black uppercase tracking-wider text-zinc-500 mb-1">{{ ATTR_LABELS[key] }}</div>
+        <div class="text-[11px] font-black uppercase tracking-wider text-zinc-500 mb-1.5">{{ ATTR_LABELS[key] }}</div>
 
         <template v-if="editMode && editedData?.attributes?.[key]">
           <input v-model.number="editedData.attributes[key].base" type="number" min="1" max="30"
-            class="w-10 text-center text-lg font-extrabold font-serif bg-transparent border-b border-zinc-600
+            class="w-14 text-center text-xl font-extrabold font-serif bg-transparent border-b border-zinc-600
                    focus:border-primary focus:outline-none tabular-nums
                    [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             @click.stop />
         </template>
-        <div v-else class="text-xl font-extrabold font-serif leading-none text-zinc-100">{{ attrTotal(key) }}</div>
+        <div v-else class="text-3xl font-extrabold font-serif leading-none text-zinc-100">{{ attrTotal(key) }}</div>
 
-        <div class="mt-1 text-[10px] font-bold text-zinc-400 bg-zinc-800/60 rounded px-1.5 py-0.5">
+        <div class="mt-1.5 text-xs font-bold text-zinc-400 bg-zinc-800/60 rounded px-2 py-0.5">
           {{ modStr(calcMod(attrTotal(key))) }}
         </div>
       </div>
@@ -1685,6 +2932,86 @@ const stats = () => [
 
 
 ---
+## FILE: src/components/sheet/blocks/HeaderBlock.vue
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import type { Sheet } from '@/types/sheet'
+
+const props = defineProps<{
+  sheet: Sheet
+  d: any
+  editMode: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'edit-core'): void
+}>()
+
+const imgUrl = computed(() => props.d?.avatarUrl || props.d?.image)
+</script>
+
+<template>
+  <div class="rounded-xl border border-zinc-800 bg-zinc-950 p-4 sm:p-5 mb-6 min-h-[160px] flex flex-col justify-center relative overflow-hidden shadow-2xl group">
+    
+    <!-- Background Image -->
+    <div v-if="imgUrl" class="absolute inset-0 z-0">
+      <img :src="imgUrl" class="w-full h-full object-cover object-center opacity-50 transition-transform duration-1000 group-hover:scale-105" />
+      <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-zinc-950/20"></div>
+      <div class="absolute inset-0 bg-zinc-950/30"></div>
+    </div>
+    
+    <!-- Decorative background glow (fallback if no image) -->
+    <div v-else class="absolute inset-0 bg-primary/5 blur-[60px] pointer-events-none z-0"></div>
+
+    <!-- Info Content -->
+    <div class="relative z-10 flex flex-col sm:flex-row justify-between items-center sm:items-center w-full gap-4 sm:gap-6">
+      
+      <!-- Left Side: Basic Info -->
+      <div class="flex flex-col items-center sm:items-start text-center sm:text-left flex-1 min-w-0">
+        <!-- Placeholder Avatar if no image -->
+        <div v-if="!imgUrl" class="w-14 h-14 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-inner mb-2 lg:mb-0 lg:absolute lg:top-0 lg:left-0 lg:-translate-y-1/2 lg:-translate-x-1/2">
+          <span class="text-zinc-600 text-2xl font-serif font-black">{{ sheet.name?.charAt(0) || '?' }}</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-4xl font-extrabold font-serif text-white leading-tight drop-shadow-lg mb-2 break-words">{{ sheet.name }}</h1>
+        
+        <div class="flex flex-wrap items-center justify-center sm:justify-start gap-x-2 gap-y-2 text-xs sm:text-sm text-zinc-300">
+          <span class="font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-sm border border-primary/20 backdrop-blur-md shadow-sm">{{ sheet.class }} {{ sheet.level }}</span>
+          <span v-if="sheet.race" class="text-zinc-100 font-semibold drop-shadow-md">{{ sheet.race }}</span>
+          
+          <template v-if="d?.alignment">
+            <span class="text-zinc-500">•</span>
+            <span class="text-zinc-300 font-medium drop-shadow-md">{{ d.alignment }}</span>
+          </template>
+          
+          <template v-if="d?.age">
+            <span class="text-zinc-500">•</span>
+            <span class="text-zinc-300 drop-shadow-md">{{ d.age }} anos</span>
+          </template>
+
+          <div v-if="d?.xp !== undefined" class="flex items-center gap-1.5 bg-zinc-950/60 backdrop-blur-md border border-zinc-700/50 rounded-md px-2 py-0.5 shadow-inner sm:ml-2">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-zinc-400">XP</span>
+            <span class="text-xs font-black font-serif text-white">{{ d.xp }}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Right Side: Edit Buttons -->
+      <div class="flex flex-col items-stretch sm:items-end w-full sm:w-auto mt-2 sm:mt-0">
+        <button @click="emit('edit-core')" class="bg-zinc-800/80 hover:bg-zinc-700 backdrop-blur-md text-zinc-300 border border-zinc-700 rounded-md px-3 py-1.5 text-[10px] uppercase font-bold tracking-widest shadow-md transition-all whitespace-nowrap">
+          Editar Frente da Ficha
+        </button>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+```
+
+
+---
 ## FILE: src/components/sheet/blocks/ResourcesBlock.vue
 ```vue
 <script setup lang="ts">
@@ -1724,21 +3051,9 @@ const barColor = (cur: number, max: number) => {
 
 <template>
   <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-2">
-        <Layers class="w-4 h-4 text-zinc-400" />
-        <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Recursos</span>
-      </div>
-      <div class="flex gap-2">
-        <button @click="onReset"
-          class="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800 rounded-lg px-2.5 py-1 hover:bg-zinc-800">
-          <RotateCcw class="w-3 h-3" /> Descanso
-        </button>
-        <button v-if="editMode" @click="showForm = !showForm"
-          class="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors border border-primary/30 rounded-lg px-2.5 py-1 hover:bg-primary/10">
-          <Plus class="w-3 h-3" /> Novo
-        </button>
-      </div>
+    <div class="flex items-center gap-2 mb-3">
+      <Layers class="w-4 h-4 text-zinc-400" />
+      <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Recursos</span>
     </div>
 
     <!-- Add form -->
@@ -1786,6 +3101,18 @@ const barColor = (cur: number, max: number) => {
         </div>
       </div>
     </div>
+
+    <!-- Footer -->
+    <div class="mt-4 pt-3 border-t border-zinc-800/50 flex justify-end gap-2">
+      <button @click="onReset"
+        class="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800 rounded-lg px-2.5 py-1 hover:bg-zinc-800">
+        <RotateCcw class="w-3 h-3" /> Descanso
+      </button>
+      <button v-if="editMode" @click="showForm = !showForm"
+        class="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors border border-primary/30 rounded-lg px-2.5 py-1 hover:bg-primary/10">
+        <Plus class="w-3 h-3" /> Novo
+      </button>
+    </div>
   </div>
 </template>
 
@@ -1796,55 +3123,60 @@ const barColor = (cur: number, max: number) => {
 ## FILE: src/components/sheet/blocks/ShortcutsBlock.vue
 ```vue
 <script setup lang="ts">
-import { Plus, Trash2, Dices } from 'lucide-vue-next'
+import { Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   d: any
   modStr: (n: number) => string
   resolveFormula: (formula: string) => string
   editMode: boolean
-  onRollItem: (label: string, formula: string, isAtk: boolean, atkF: string, dmgF: string) => void
+  onRollItem: (item: any) => void
   onAddShortcut: () => void
   onDeleteShortcut: (i: number) => void
 }>()
 </script>
 
 <template>
-  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-2">
-        <Dices class="w-4 h-4 text-primary" />
-        <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Atalhos</span>
-      </div>
-      <button v-if="editMode" @click="onAddShortcut"
-        class="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors border border-primary/30 rounded-lg px-2.5 py-1 hover:bg-primary/10">
-        <Plus class="w-3 h-3" /> Novo Atalho
-      </button>
-    </div>
+  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 flex flex-col max-h-[400px]">
+    
+    <!-- Tab Headers -->
+    <div class="flex-1 overflow-y-auto custom-scrollbar pr-1">
+      
+      <!-- TAB ATACHOS -->
 
-    <div v-if="!d?.shortcuts?.length" class="text-center py-8 text-zinc-600 text-sm">
-      Nenhum atalho cadastrado.
-    </div>
+        <div v-if="!d?.shortcuts?.length" class="text-center py-6 text-zinc-600 text-sm">
+          Nenhum atalho cadastrado.
+        </div>
 
-    <div class="flex flex-wrap gap-2">
-      <div v-for="(sc, i) in d?.shortcuts" :key="i"
-        class="relative group flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 hover:border-primary/40 transition-all duration-200 cursor-pointer select-none"
-        @click="onRollItem(sc.title || sc.label || '?', sc.rollFormula || sc.formula || '', sc.isAttack, sc.attackFormula, sc.damageFormula)"
-      >
-        <div>
-          <div class="font-bold text-sm text-zinc-200">{{ sc.title || sc.label }}</div>
-          <div v-if="sc.isAttack" class="text-[10px] text-zinc-500">
-            Ataque: {{ sc.attackBonus ? modStr(Number(sc.attackBonus)) : resolveFormula(sc.attackFormula || '') }}
-          </div>
-          <div v-else-if="sc.rollFormula || sc.formula" class="text-[10px] text-zinc-500">
-            {{ sc.rollFormula || sc.formula }}
+        <div class="flex flex-wrap gap-2">
+          <div v-for="(sc, i) in d?.shortcuts" :key="i"
+            class="relative group flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 hover:border-primary/40 transition-all duration-200 cursor-pointer select-none"
+            @click="onRollItem({ ...sc, title: sc.title || sc.label, rollFormula: sc.rollFormula || sc.formula })"
+          >
+            <div>
+              <div class="font-bold text-sm text-zinc-200">{{ sc.title || sc.label }}</div>
+              <div v-if="sc.isAttack" class="text-[10px] text-zinc-500">
+                Ataque: {{ sc.attackBonus ? modStr(Number(sc.attackBonus)) : resolveFormula(sc.attackFormula || '') }}
+              </div>
+              <div v-else-if="sc.rollFormula || sc.formula" class="text-[10px] text-zinc-500">
+                {{ sc.rollFormula || sc.formula }}
+              </div>
+            </div>
+            <button v-if="editMode" @click.stop="onDeleteShortcut(Number(i))"
+              class="opacity-0 group-hover:opacity-100 absolute top-1 right-1 text-red-600 hover:text-red-400 transition-all">
+              <Trash2 class="w-3 h-3" />
+            </button>
           </div>
         </div>
-        <button v-if="editMode" @click.stop="onDeleteShortcut(i)"
-          class="opacity-0 group-hover:opacity-100 absolute top-1 right-1 text-red-600 hover:text-red-400 transition-all">
-          <Trash2 class="w-3 h-3" />
-        </button>
-      </div>
+
+        <!-- Add shortcut -->
+        <div v-if="editMode" class="mt-4 pt-3 border-t border-zinc-800/50 flex justify-end">
+          <button @click="onAddShortcut"
+            class="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors border border-primary/30 rounded-lg px-2.5 py-1 hover:bg-primary/10">
+            <Plus class="w-3 h-3" /> Novo Atalho
+          </button>
+        </div>
+
     </div>
   </div>
 </template>
@@ -1856,7 +3188,7 @@ const props = defineProps<{
 ## FILE: src/components/sheet/blocks/VitalsBlock.vue
 ```vue
 <script setup lang="ts">
-import { Heart, Plus, Minus, Skull } from 'lucide-vue-next'
+import { Heart, Skull, Activity, ShieldPlus } from 'lucide-vue-next'
 import type { Sheet } from '@/types/sheet'
 
 const props = defineProps<{
@@ -1866,18 +3198,7 @@ const props = defineProps<{
   onSaveHP: () => void
 }>()
 
-const adjustHP = (delta: number) => {
-  const cur = props.sheet.data.hp_current ?? 0
-  const max = props.totalHP
-  props.sheet.data.hp_current = Math.max(-10, Math.min(max, cur + delta))
-  props.onSaveHP()
-}
 
-const adjustTemp = (delta: number) => {
-  const cur = props.sheet.data.hp_temp ?? 0
-  props.sheet.data.hp_temp = Math.max(0, cur + delta)
-  props.onSaveHP()
-}
 
 const percent = () => {
   const c = props.sheet.data.hp_current ?? 0
@@ -1894,66 +3215,56 @@ const hpColor = () => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 space-y-3">
+  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-5 space-y-5 relative overflow-hidden shadow-lg">
+    <!-- Decorative background glow -->
+    <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 pointer-events-none blur-3xl" :style="{ backgroundColor: hpColor() }"></div>
+
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between relative z-10">
       <div class="flex items-center gap-2">
-        <Heart class="w-4 h-4 text-red-400" />
-        <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Pontos de Vida</span>
+        <Activity class="w-4 h-4 text-zinc-400" />
+        <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Status Vital</span>
       </div>
       <div v-if="deathStatus"
         class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border animate-pulse"
         :class="deathStatus.color">
         <Skull class="w-3 h-3 inline mr-1" />{{ deathStatus.label }}
       </div>
+      <div v-else :style="{ color: hpColor() }" class="text-[10px] font-bold tracking-widest uppercase flex items-center gap-1">
+        <Heart class="w-3 h-3" :class="percent() < 30 ? 'animate-pulse' : ''" />
+        <span>{{ percent().toFixed(0) }}%</span>
+      </div>
     </div>
 
-    <!-- HP bar -->
-    <div class="h-3 bg-zinc-800 rounded-full overflow-hidden">
-      <div class="h-full rounded-full transition-all duration-500 ease-out"
-        :style="{ width: percent() + '%', backgroundColor: hpColor() }" />
-    </div>
-
-    <!-- HP Numbers -->
-    <div class="flex items-center gap-4">
-      <!-- Current HP -->
-      <div class="flex items-center gap-2">
-        <button @click="adjustHP(-1)"
-          class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 transition-colors">
-          <Minus class="w-3.5 h-3.5 text-zinc-400" />
-        </button>
-        <div class="text-center">
-          <input v-model.number="sheet.data.hp_current" @change="onSaveHP" type="number"
-            class="w-14 text-center text-3xl font-extrabold font-serif text-zinc-100 bg-transparent border-b-2 border-zinc-700 focus:border-zinc-400 focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-          <div class="text-[10px] text-zinc-600 uppercase tracking-wider">atual</div>
+    <!-- HP Numbers and Bar -->
+    <div class="space-y-3 relative z-10">
+      <div class="flex items-end justify-between gap-4">
+        <!-- Current HP -->
+        <div class="flex-1">
+          <div class="flex items-baseline gap-1">
+            <input v-model.number="sheet.data.hp_current" @change="onSaveHP" type="number"
+              class="w-16 sm:w-20 text-4xl sm:text-5xl font-black font-serif text-zinc-100 bg-transparent border-b-2 border-transparent hover:border-zinc-700 focus:border-zinc-400 focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors" />
+            <span class="text-2xl text-zinc-600 font-light">/</span>
+            <span class="text-2xl font-bold text-zinc-400">{{ totalHP }}</span>
+          </div>
+          <div class="text-[10px] text-zinc-500 uppercase tracking-wider mt-1 ml-1 font-semibold">Pontos de Vida</div>
         </div>
-        <button @click="adjustHP(1)"
-          class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 transition-colors">
-          <Plus class="w-3.5 h-3.5 text-zinc-400" />
-        </button>
-      </div>
 
-      <div class="text-2xl text-zinc-700 font-light">/</div>
-
-      <!-- Max HP -->
-      <div class="text-center">
-        <div class="text-3xl font-extrabold font-serif text-zinc-300">{{ totalHP }}</div>
-        <div class="text-[10px] text-zinc-600 uppercase tracking-wider">máximo</div>
-      </div>
-
-      <!-- Temp HP -->
-      <div class="ml-auto flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-1.5">
-        <button @click="adjustTemp(-1)" class="text-zinc-500 hover:text-zinc-300 transition-colors">
-          <Minus class="w-3 h-3" />
-        </button>
-        <div class="text-center">
+        <!-- Temp HP -->
+        <div class="bg-zinc-900/80 border border-zinc-800 rounded-xl p-2.5 flex flex-col items-center justify-center min-w-[4.5rem] shadow-inner">
+          <ShieldPlus class="w-4 h-4 text-zinc-500 mb-1" />
           <input v-model.number="sheet.data.hp_temp" @change="onSaveHP" type="number"
-            class="w-8 text-center text-sm font-bold text-zinc-200 bg-transparent border-b border-zinc-700 focus:border-primary focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-          <div class="text-[10px] text-zinc-600 uppercase tracking-wider">temp</div>
+            class="w-full text-center text-lg font-black text-zinc-200 bg-transparent focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder-zinc-700" placeholder="0" />
+          <div class="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">Temp</div>
         </div>
-        <button @click="adjustTemp(1)" class="text-zinc-500 hover:text-zinc-300 transition-colors">
-          <Plus class="w-3 h-3" />
-        </button>
+      </div>
+
+      <!-- HP bar -->
+      <div class="h-4 bg-zinc-900/80 rounded-full overflow-hidden border border-zinc-800 shadow-inner p-0.5">
+        <div class="h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+          :style="{ width: percent() + '%', backgroundColor: hpColor() }">
+          <div class="absolute inset-0 bg-white/20 w-full h-full transform -skew-x-12 -translate-x-full"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1963,16 +3274,339 @@ const hpColor = () => {
 
 
 ---
+## FILE: src/components/sheet/CoreDataEditorModal.vue
+```vue
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { X, Dices } from 'lucide-vue-next'
+import type { SheetData } from '@/types/sheet'
+import { ATTR_KEYS, ATTR_LABELS } from '@/data/sheetConstants'
+
+const props = defineProps<{
+  modelValue: boolean
+  sheetName: string
+  sheetClass: string
+  sheetLevel: number
+  sheetRace: string
+  data: SheetData
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'save', meta: { name: string; class: string; level: number; race: string }, data: any): void
+}>()
+
+// Local state for editing
+const editMeta = ref({
+  name: '',
+  class: '',
+  level: 1,
+  race: ''
+})
+
+const editData = ref<any>({})
+
+watch(() => props.modelValue, (isOpen) => {
+  if (isOpen) {
+    // Clone data for editing
+    editMeta.value = {
+      name: props.sheetName,
+      class: props.sheetClass,
+      level: props.sheetLevel,
+      race: props.sheetRace
+    }
+    // Deep clone data to avoid reactive mutations before save
+    editData.value = JSON.parse(JSON.stringify(props.data))
+    
+    // Ensure attributes exist
+    if (!editData.value.attributes) editData.value.attributes = {}
+    for (const k of ATTR_KEYS) {
+      if (!editData.value.attributes[k]) editData.value.attributes[k] = { base: 10, temp: 0 }
+    }
+  }
+})
+
+function close() {
+  emit('update:modelValue', false)
+}
+
+function save() {
+  emit('save', editMeta.value, editData.value)
+  close()
+}
+
+const hitDieInput = ref('d10')
+const lastRollResult = ref<{roll: number, conMod: number, total: number} | null>(null)
+
+function rollHitDie() {
+  const input = String(hitDieInput.value || '')
+  const match = input.toLowerCase().match(/^d(\d+)$/)
+  if (!match) {
+    alert('Formato inválido. Use algo como d8, d10, d12.')
+    return
+  }
+  const sides = parseInt(match[1] || '0', 10)
+  if (isNaN(sides) || sides < 1) return
+
+  const roll = Math.floor(Math.random() * sides) + 1
+  const con = editData.value.attributes?.con?.base ?? 10
+  const conMod = Math.floor((con - 10) / 2)
+  const total = roll + conMod
+
+  // Add to max HP
+  editData.value.hp_max = (editData.value.hp_max || 0) + Math.max(1, total)
+  
+  lastRollResult.value = { roll, conMod, total: Math.max(1, total) }
+  
+  // Autosave when rolling
+  emit('save', editMeta.value, editData.value)
+  
+  // Clear result after 3s
+  setTimeout(() => {
+    lastRollResult.value = null
+  }, 3000)
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <div v-if="modelValue" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+      
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+      
+      <!-- Modal Content -->
+      <div class="relative w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60 bg-zinc-900/40">
+          <h2 class="text-lg font-bold text-zinc-100 font-serif">Editar Dados do Personagem</h2>
+          <button @click="close" class="p-2 -mr-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors">
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <!-- Scrollable Body -->
+        <div class="p-6 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
+          
+          <!-- Identidade -->
+          <section class="bg-zinc-900/20 border border-zinc-800/60 rounded-xl p-5">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-primary mb-4 pb-2 border-b border-zinc-800/80">Identidade</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-zinc-400">Nome</label>
+                <input v-model="editMeta.name" type="text" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-zinc-400">Raça</label>
+                <input v-model="editMeta.race" type="text" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-zinc-400">Classe</label>
+                <input v-model="editMeta.class" type="text" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-1.5">
+                  <label class="text-xs font-semibold text-zinc-400">Nível</label>
+                  <input v-model.number="editMeta.level" type="number" min="1" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-xs font-semibold text-zinc-400">Experiência</label>
+                  <input v-model.number="editData.xp" type="number" min="0" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+                </div>
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-zinc-400">Tamanho</label>
+                <select v-model="editData.size" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors">
+                  <option value="Colossal">Colossal</option>
+                  <option value="Imenso">Imenso</option>
+                  <option value="Enorme">Enorme</option>
+                  <option value="Grande">Grande</option>
+                  <option value="Médio">Médio</option>
+                  <option value="Pequeno">Pequeno</option>
+                  <option value="Miúdo">Miúdo</option>
+                  <option value="Diminuto">Diminuto</option>
+                  <option value="Mínimo">Mínimo</option>
+                </select>
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-zinc-400">Alinhamento</label>
+                <input v-model="editData.alignment" type="text" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Idade</label>
+                  <input v-model.number="editData.age" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors text-center" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Peso (kg)</label>
+                  <input v-model.number="editData.weight" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors text-center" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Altura (m)</label>
+                  <input v-model.number="editData.height" type="number" step="0.01" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors text-center" />
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 space-y-1.5">
+              <label class="text-xs font-semibold text-zinc-400">Avatar URL (Imagem)</label>
+              <input v-model="editData.avatarUrl" type="text" placeholder="https://..." class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none transition-colors" />
+            </div>
+          </section>
+
+          <!-- Atributos base -->
+          <section class="bg-zinc-900/20 border border-zinc-800/60 rounded-xl p-5">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-primary mb-4 pb-2 border-b border-zinc-800/80">Atributos Base e Temporários</h3>
+            <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              <div v-for="key in ATTR_KEYS" :key="key" class="space-y-2 bg-zinc-950/50 border border-zinc-800/60 rounded-lg p-2">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-center">{{ ATTR_LABELS[key] }}</div>
+                <div>
+                  <label class="text-[8px] uppercase text-zinc-600 block text-center mb-0.5">Base</label>
+                  <input v-model.number="editData.attributes[key].base" type="number" min="1" max="50" 
+                    class="w-full bg-transparent border-b border-zinc-800 focus:border-primary px-1 py-1 text-center text-lg font-serif font-black text-zinc-100 focus:outline-none tabular-nums" />
+                </div>
+                <div>
+                  <label class="text-[8px] uppercase text-zinc-600 block text-center mb-0.5">Temp</label>
+                  <input v-model.number="editData.attributes[key].temp" type="number" 
+                    class="w-full bg-transparent border-b border-zinc-800 focus:border-cyan-500/50 px-1 py-1 text-center text-sm font-bold text-cyan-200 focus:outline-none tabular-nums" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Combate & Vitals -->
+          <section class="bg-zinc-900/20 border border-zinc-800/60 rounded-xl p-5">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-primary mb-4 pb-2 border-b border-zinc-800/80">Combate & Sobrevivência</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              
+              <!-- Max HP with Roll button -->
+              <div class="space-y-1.5 sm:col-span-2 bg-red-950/10 border border-red-900/20 rounded-lg p-3">
+                <div class="flex justify-between items-end mb-2">
+                  <label class="text-xs font-semibold text-zinc-300">Pontos de Vida</label>
+                  <div class="flex items-center gap-1.5">
+                    <input v-model="hitDieInput" type="text" placeholder="d10" class="w-12 bg-zinc-900 border border-zinc-700 rounded text-center text-xs py-1 text-zinc-300 focus:border-red-500 focus:outline-none uppercase" />
+                    <button @click="rollHitDie" class="bg-red-900/40 hover:bg-red-800/60 text-red-200 border border-red-800/50 rounded px-2 py-1 text-xs font-bold flex items-center gap-1 transition-colors relative" title="Rolar e Somar Vida">
+                      <Dices class="w-3 h-3" /> Rolar
+                      <span v-if="lastRollResult" class="absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-100 text-zinc-900 text-[10px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap animate-in fade-in slide-in-from-bottom-2">
+                        +{{ lastRollResult.total }} ({{ lastRollResult.roll }} + {{ lastRollResult.conMod }})
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-[10px] uppercase text-zinc-500 font-bold block mb-1 text-center">Atual</label>
+                    <input v-model.number="editData.hp_current" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-center text-lg font-bold text-zinc-200 focus:border-red-500 focus:outline-none tabular-nums" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] uppercase text-zinc-500 font-bold block mb-1 text-center">Máxima</label>
+                    <input v-model.number="editData.hp_max" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-center text-lg font-bold text-zinc-200 focus:border-red-500 focus:outline-none tabular-nums" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase font-bold text-zinc-400">BBA (Ataque Base)</label>
+                <input v-model.number="editData.bab" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums mt-1" />
+              </div>
+              
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase font-bold text-zinc-400">Deslocamento (m)</label>
+                <input v-model.number="editData.speed" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums mt-1" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-6 mt-6 pt-5 border-t border-zinc-800/50">
+              <!-- Defesa Base -->
+              <div>
+                <h4 class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3">Defesa Base</h4>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">CA Armadura</label>
+                    <input v-model.number="editData.ca_armor" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">CA Escudo</label>
+                    <input v-model.number="editData.ca_shield" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">CA Natural</label>
+                    <input v-model.number="editData.ca_natural" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">CA Deflexão</label>
+                    <input v-model.number="editData.ca_deflect" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Salvaguardas & Misc -->
+              <div>
+                <h4 class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3">Salvaguardas & Extras</h4>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">Fortitude</label>
+                    <input v-model.number="editData.save_fort" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">Init Extra</label>
+                    <input v-model.number="editData.initiative_misc" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">Reflexos</label>
+                    <input v-model.number="editData.save_ref" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-semibold text-zinc-400">Vontade</label>
+                    <input v-model.number="editData.save_will" type="number" class="w-full bg-zinc-950/50 border border-zinc-800 rounded-md px-2 py-1.5 text-sm text-zinc-200 focus:border-primary focus:outline-none tabular-nums" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 border-t border-zinc-800/60 bg-zinc-900/40 flex justify-end gap-3">
+          <button @click="close" class="px-5 py-2.5 rounded-lg border border-zinc-700 text-sm font-semibold text-zinc-300 hover:bg-zinc-800 transition-colors">
+            Cancelar
+          </button>
+          <button @click="save" class="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors">
+            Salvar Ficha
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border-radius: 10px;
+}
+</style>
+
+```
+
+
+---
 ## FILE: src/components/sheet/ItemEditorModal.vue
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { X, Plus, Trash2, BookOpen, Sword, Zap, Package, Flame } from 'lucide-vue-next'
+import { X, Plus, Trash2, Sword, Zap, Package, Flame } from 'lucide-vue-next'
 import { MODIFIER_TARGETS } from '@/data/sheetConstants'
 
 const props = defineProps<{
   modelValue: boolean
-  type: 'feat' | 'spell' | 'shortcut' | 'equipment' | 'buff'
+  type: 'feat' | 'shortcut' | 'equipment' | 'buff'
   item: any
   index: number
 }>()
@@ -1987,7 +3621,12 @@ const form = ref<any>({})
 // Sync with item prop
 import { watch } from 'vue'
 watch(() => props.item, (val) => {
-  form.value = val ? JSON.parse(JSON.stringify({ attackFormula: '', damageFormula: '', rollFormula: '', modifiers: [], isAttack: false, spellLevel: 1, ...val })) : {}
+  const parsed = val ? JSON.parse(JSON.stringify({
+    attackFormula: '', damageFormula: '', rollFormula: '', modifiers: [], dynamicRolls: [],
+    isAttack: false, spellLevel: 1, applyBuffName: '', applyBuffValue: '', ...val
+  })) : {}
+
+  form.value = parsed
 }, { immediate: true })
 
 function close() { emit('update:modelValue', false) }
@@ -1995,15 +3634,17 @@ function addModifier() {
   if (!form.value.modifiers) form.value.modifiers = []
   form.value.modifiers.push({ target: 'str', value: 1 })
 }
-function removeModifier(i: number) { form.value.modifiers.splice(i, 1) }
+function removeModifier(i: number | string) { form.value.modifiers.splice(Number(i), 1) }
+
+
 function save() {
   if (!form.value.title?.trim()) return
   emit('save', { ...form.value })
   close()
 }
 
-const TYPE_ICON = { spell: BookOpen, shortcut: Sword, equipment: Package, buff: Flame, feat: Zap }
-const TYPE_LABELS: Record<string, string> = { feat: 'Talento', spell: 'Magia', shortcut: 'Atalho', equipment: 'Item', buff: 'Buff/Condição' }
+const TYPE_ICON = { shortcut: Sword, equipment: Package, buff: Flame, feat: Zap }
+const TYPE_LABELS: Record<string, string> = { feat: 'Talento', shortcut: 'Atalho', equipment: 'Item', buff: 'Buff/Condição' }
 </script>
 
 <template>
@@ -2032,52 +3673,6 @@ const TYPE_LABELS: Record<string, string> = { feat: 'Talento', spell: 'Magia', s
             <input v-model="form.title" placeholder="Ex: Bola de Fogo"
               class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
           </div>
-
-          <!-- Spell fields -->
-          <template v-if="type === 'spell'">
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Nível</label>
-                <input v-model.number="form.spellLevel" type="number" min="0" max="9"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Escola</label>
-                <input v-model="form.school" placeholder="Evocação"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Tempo</label>
-                <input v-model="form.castingTime" placeholder="1 ação padrão"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Alcance</label>
-                <input v-model="form.range" placeholder="Médio"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Alvo/Área</label>
-                <input v-model="form.target" placeholder="Círculo de 6m"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Duração</label>
-                <input v-model="form.duration" placeholder="Instantânea"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Resistência</label>
-                <input v-model="form.savingThrow" placeholder="Reflexos anula"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-              <div>
-                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">RM?</label>
-                <input v-model="form.spellResist" placeholder="Sim"
-                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-              </div>
-            </div>
-          </template>
 
           <!-- Equipment fields -->
           <template v-if="type === 'equipment'">
@@ -2123,28 +3718,30 @@ const TYPE_LABELS: Record<string, string> = { feat: 'Talento', spell: 'Magia', s
           <div v-if="type !== 'equipment' && type !== 'buff'">
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" v-model="form.isAttack" class="w-4 h-4 rounded accent-primary" />
-              <span class="text-sm text-zinc-300">É um ataque (fórmula dupla)</span>
+              <span class="text-sm text-zinc-300">É um ataque/magia ofensiva</span>
             </label>
           </div>
 
-          <!-- Roll formulas -->
-          <div v-if="!form.isAttack && type !== 'equipment'">
-            <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula</label>
-            <input v-model="form.rollFormula" placeholder="Ex: 1d20 + @intMod"
-              class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
-          </div>
-          <div v-else-if="form.isAttack" class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula Ataque</label>
-              <input v-model="form.attackFormula" placeholder="1d20 + @BBA"
+          <!-- Roll formulas (Non-Spells) -->
+          <template v-else>
+            <div v-if="!form.isAttack && type !== 'equipment'">
+              <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula</label>
+              <input v-model="form.rollFormula" placeholder="Ex: 1d20 + @intMod"
                 class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
             </div>
-            <div>
-              <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula Dano</label>
-              <input v-model="form.damageFormula" placeholder="1d8 + @strMod"
-                class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
+            <div v-else-if="form.isAttack" class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula Ataque</label>
+                <input v-model="form.attackFormula" placeholder="1d20 + @BBA"
+                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-zinc-500 block mb-1.5">Fórmula Dano</label>
+                <input v-model="form.damageFormula" placeholder="1d8 + @strMod"
+                  class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 font-mono placeholder-zinc-600 focus:outline-none focus:border-primary/60" />
+              </div>
             </div>
-          </div>
+          </template>
 
           <!-- Modifiers -->
           <div class="space-y-2">
@@ -2189,74 +3786,106 @@ const TYPE_LABELS: Record<string, string> = { feat: 'Talento', spell: 'Magia', s
 
 
 ---
-## FILE: src/components/sheet/tabs/BuffsTab.vue
+## FILE: src/components/sheet/RawDataEditorModal.vue
 ```vue
 <script setup lang="ts">
-import { Plus, Trash2, Flame } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
+import { X, AlertTriangle } from 'lucide-vue-next'
 
 const props = defineProps<{
-  d: any
-  modStr: (n: number) => string
-  resolveFormula: (formula: string) => string
-  onOpenEditor: (type: string, item?: any, index?: number) => void
-  onDelete: (type: string, index: number) => void
-  onToggle: (i: number) => void
+  modelValue: boolean
+  data: any
 }>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'save', data: any): void
+}>()
+
+const rawText = ref('')
+const errorMsg = ref('')
+
+watch(() => props.modelValue, (isOpen) => {
+  if (isOpen) {
+    rawText.value = JSON.stringify(props.data, null, 2)
+    errorMsg.value = ''
+  }
+})
+
+function close() {
+  emit('update:modelValue', false)
+}
+
+function save() {
+  try {
+    const parsed = JSON.parse(rawText.value)
+    emit('save', parsed)
+    close()
+  } catch (err: any) {
+    errorMsg.value = 'JSON Inválido: ' + err.message
+  }
+}
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- Tab toolbar -->
-    <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 flex items-center justify-between">
-      <span class="text-xs font-bold uppercase tracking-widest text-zinc-500">{{ d?.buffs?.length ?? 0 }} buffs</span>
-      <button @click="onOpenEditor('buff')"
-        class="flex items-center gap-1 text-xs text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1.5 hover:bg-zinc-800 transition-colors">
-        <Plus class="w-3.5 h-3.5" /> Novo Buff
-      </button>
-    </div>
-
-    <div class="space-y-2">
-      <div v-for="(buf, i) in d?.buffs" :key="i"
-        class="group rounded-xl border overflow-hidden transition-all duration-200"
-        :class="buf.active
-          ? 'border-primary/30 bg-primary/5'
-          : 'border-zinc-800 bg-zinc-950/60 opacity-60'">
-        <div class="flex items-center gap-3 px-4 py-3">
-          <!-- Toggle -->
-          <button @click="onToggle(i)"
-            class="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 transition-all"
-            :class="buf.active
-              ? 'bg-primary/20 border border-primary/40 text-primary'
-              : 'bg-zinc-800 border border-zinc-700 text-zinc-500 hover:text-zinc-300'">
-            <Flame class="w-3 h-3" />
-            {{ buf.active ? 'Ativo' : 'Inativo' }}
+  <Teleport to="body">
+    <div v-if="modelValue" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="close"></div>
+      
+      <!-- Modal Content -->
+      <div class="relative w-full max-w-4xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col h-[90vh]">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60 bg-zinc-900/40">
+          <div>
+            <h2 class="text-lg font-bold text-zinc-100 font-serif">Editar Ficha (Raw JSON)</h2>
+            <p class="text-xs text-zinc-500">Cuidado ao editar os dados brutos. Certifique-se de usar JSON válido.</p>
+          </div>
+          <button @click="close" class="p-2 -mr-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors">
+            <X class="w-5 h-5" />
           </button>
+        </div>
 
-          <!-- Info -->
-          <div class="flex-1">
-            <div class="font-bold text-sm text-zinc-200">{{ buf.title }}</div>
-            <div v-if="buf.modifiers?.length" class="text-[10px] text-zinc-500 mt-0.5">
-              {{ buf.modifiers.map((m: any) => `${m.target} ${modStr(m.value)}`).join(' · ') }}
-            </div>
+        <!-- Editor -->
+        <div class="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+          <div v-if="errorMsg" class="flex items-start gap-3 bg-red-950/30 border border-red-900/50 rounded-lg p-3 text-red-400 text-sm">
+            <AlertTriangle class="w-5 h-5 shrink-0" />
+            <p>{{ errorMsg }}</p>
           </div>
+          <textarea
+            v-model="rawText"
+            class="flex-1 w-full bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 text-sm font-mono text-zinc-300 focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
+            spellcheck="false"
+          ></textarea>
+        </div>
 
-          <div class="flex gap-1">
-            <button @click="onOpenEditor('buff', buf, i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-            </button>
-            <button @click="onDelete('buff', i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
-              <Trash2 class="w-3.5 h-3.5" />
-            </button>
-          </div>
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-zinc-800/60 bg-zinc-900/40 flex justify-end gap-3">
+          <button @click="close" class="px-5 py-2.5 rounded-lg border border-zinc-700 text-sm font-semibold text-zinc-300 hover:bg-zinc-800 transition-colors">
+            Cancelar
+          </button>
+          <button @click="save" class="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors">
+            Salvar JSON
+          </button>
         </div>
       </div>
-
-      <div v-if="!d?.buffs?.length" class="text-center py-12 text-zinc-600 text-sm">
-        Nenhum buff ativo.
-      </div>
     </div>
-  </div>
+  </Teleport>
 </template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border-radius: 10px;
+}
+</style>
 
 ```
 
@@ -2296,7 +3925,7 @@ const props = defineProps<{
           :class="tabsEditMode
             ? 'bg-primary/20 border-primary text-primary'
             : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200'">
-          {{ tabsEditMode ? '✓ Concluir' : 'Editar' }}
+          {{ tabsEditMode ? '✓ Concluir' : 'Editar Modificadores' }}
         </button>
       </div>
 
@@ -2426,7 +4055,7 @@ function toggleExpand(i: number) {
         :class="item.equipped ? 'border-primary/30 bg-primary/5' : 'border-zinc-800'">
         <div class="flex items-center gap-3 px-4 py-3">
           <!-- Equipped toggle -->
-          <button @click="onToggleEquipped(i)"
+          <button @click="onToggleEquipped(Number(i))"
             class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
             :class="item.equipped
               ? 'bg-primary/20 border border-primary/40 text-primary'
@@ -2435,7 +4064,7 @@ function toggleExpand(i: number) {
           </button>
 
           <!-- Info -->
-          <div class="flex-1 cursor-pointer" @click="toggleExpand(i)">
+          <div class="flex-1 cursor-pointer" @click="toggleExpand(Number(i))">
             <div class="font-bold text-sm" :class="item.equipped ? 'text-primary/90' : 'text-zinc-300'">
               {{ item.title }}
             </div>
@@ -2448,20 +4077,20 @@ function toggleExpand(i: number) {
 
           <!-- Actions -->
           <div class="flex gap-1 items-center">
-            <button @click.stop="onOpenEditor(item, i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
+            <button @click.stop="onOpenEditor(item, Number(i))" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
             </button>
-            <button @click="onDelete('equipment', i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
+            <button @click="onDelete('equipment', Number(i))" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
               <Trash2 class="w-3.5 h-3.5" />
             </button>
-            <button @click="toggleExpand(i)" class="p-1 text-zinc-600 hover:text-zinc-300 transition-colors">
-              <ChevronDown v-if="!expanded.has(i)" class="w-4 h-4" />
+            <button @click="toggleExpand(Number(i))" class="p-1 text-zinc-600 hover:text-zinc-300 transition-colors">
+              <ChevronDown v-if="!expanded.has(Number(i))" class="w-4 h-4" />
               <ChevronUp v-else class="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <div v-if="expanded.has(i) && item.description" class="border-t border-zinc-800/60 px-4 py-3 bg-zinc-900/30">
+        <div v-if="expanded.has(Number(i)) && item.description" class="border-t border-zinc-800/60 px-4 py-3 bg-zinc-900/30">
           <p class="text-sm text-zinc-400 whitespace-pre-wrap">{{ item.description }}</p>
         </div>
       </div>
@@ -2491,11 +4120,11 @@ const props = defineProps<{
   onOpenEditor: (type: string, item?: any, index?: number) => void
   onDelete: (type: string, index: number) => void
   onRoll: (label: string, formula: string) => void
-  onDualRoll: (label: string, atkF: string, dmgF: string) => void
+  onAttackRoll: (label: string, atkF: string, dmgF: string) => void
 }>()
 
-const expanded = ref<Set<number>>(new Set())
-function toggleExpand(i: number) {
+const expanded = ref<Set<string | number>>(new Set())
+function toggleExpand(i: string | number) {
   if (expanded.value.has(i)) expanded.value.delete(i)
   else expanded.value.add(i)
 }
@@ -2537,7 +4166,7 @@ function toggleExpand(i: number) {
           <!-- Actions -->
           <div class="flex items-center gap-1">
             <button v-if="feat.isAttack"
-              @click="onDualRoll(feat.title, feat.attackFormula || '', feat.damageFormula || '')"
+              @click="onAttackRoll(feat.title, feat.attackFormula || '', feat.damageFormula || '')"
               class="text-xs font-bold px-2.5 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
               Atacar
             </button>
@@ -2546,10 +4175,10 @@ function toggleExpand(i: number) {
               class="text-xs font-bold px-2.5 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
               Rolar
             </button>
-            <button @click="onOpenEditor('feat', feat, i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
+            <button @click="onOpenEditor('feat', feat, Number(i))" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
             </button>
-            <button @click="onDelete('feat', i)" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
+            <button @click="onDelete('feat', Number(i))" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
               <Trash2 class="w-3.5 h-3.5" />
             </button>
             <button @click="toggleExpand(i)" class="p-1 text-zinc-600 hover:text-zinc-300 transition-colors">
@@ -2580,17 +4209,23 @@ function toggleExpand(i: number) {
 ## FILE: src/components/sheet/tabs/ResourcesTab.vue
 ```vue
 <script setup lang="ts">
-import { Plus, RotateCcw, Trash2 } from 'lucide-vue-next'
+import { Plus, RotateCcw, Trash2, Flame } from 'lucide-vue-next'
 import { ref } from 'vue'
 import type { Sheet } from '@/types/sheet'
 
 const props = defineProps<{
   sheet: Sheet
+  d: any
   editMode: boolean
+  modStr: (n: number) => string
+  resolveFormula: (formula: string) => string
   onAdjust: (i: number, delta: number) => void
   onReset: () => void
   onAdd: (name: string, max: number) => void
   onDelete: (i: number) => void
+  onOpenEditor: (type: string, item?: any, index?: number) => void
+  onDeleteBuff: (i: number) => void
+  onToggleBuff: (i: number) => void
 }>()
 
 const newName = ref('')
@@ -2614,80 +4249,141 @@ const barColor = (cur: number, max: number) => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <button @click="onReset"
-        class="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-lg px-3 py-2 hover:bg-zinc-800 transition-colors">
-        <RotateCcw class="w-3.5 h-3.5" /> Descanso Longo (Reset Tudo)
-      </button>
-      <button @click="showForm = !showForm"
-        class="flex items-center gap-1 text-xs text-primary border border-primary/30 rounded-lg px-2.5 py-1.5 hover:bg-primary/10 transition-colors">
-        <Plus class="w-3.5 h-3.5" /> Novo Recurso
-      </button>
-    </div>
-
-    <!-- Add form -->
-    <div v-if="showForm" class="flex gap-2 p-3 bg-zinc-900/60 rounded-xl border border-zinc-800">
-      <input v-model="newName" placeholder="Nome (ex: Fúria do Bárbaro)"
-        class="flex-1 bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 placeholder-zinc-600 px-1 py-1" />
-      <input v-model.number="newMax" type="number" min="1" placeholder="Máx"
-        class="w-14 text-center bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none" />
-      <button @click="handleAdd" class="text-xs font-bold text-primary hover:text-primary/80 px-3 py-1 bg-primary/10 rounded-lg border border-primary/20">
-        Criar
-      </button>
-    </div>
-
-    <div v-if="!sheet.data?.resources?.length" class="text-center py-16 text-zinc-600">
-      Nenhum recurso cadastrado.<br>
-      <span class="text-xs">Use "Novo Recurso" para adicionar Fúria, Pontos Arcanos, etc.</span>
-    </div>
-
-    <!-- Resource List -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- COL 1: RESOURCES -->
     <div class="space-y-4">
-      <div v-for="(res, i) in sheet.data?.resources" :key="i" class="group rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-        <div class="flex items-center justify-between mb-3">
-          <span class="font-bold text-zinc-200">{{ res.name || res.label }}</span>
-          <div class="flex items-center gap-2">
-            <span class="text-sm text-zinc-400">{{ res.current ?? res.max }} / {{ res.max }}</span>
-            <button @click="onDelete(i)" class="opacity-0 group-hover:opacity-100 text-red-700 hover:text-red-500 transition-all">
-              <Trash2 class="w-4 h-4" />
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <button @click="onReset"
+          class="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-lg px-3 py-2 hover:bg-zinc-800 transition-colors">
+          <RotateCcw class="w-3.5 h-3.5" /> Descanso Longo
+        </button>
+        <button @click="showForm = !showForm"
+          class="flex items-center gap-1 text-xs text-primary border border-primary/30 rounded-lg px-2.5 py-1.5 hover:bg-primary/10 transition-colors">
+          <Plus class="w-3.5 h-3.5" /> Novo Recurso
+        </button>
+      </div>
+
+      <!-- Add form -->
+      <div v-if="showForm" class="flex gap-2 p-3 bg-zinc-900/60 rounded-xl border border-zinc-800">
+        <input v-model="newName" placeholder="Nome (ex: Fúria)"
+          class="flex-1 bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 placeholder-zinc-600 px-1 py-1" />
+        <input v-model.number="newMax" type="number" min="1" placeholder="Máx"
+          class="w-14 text-center bg-transparent text-sm border-b border-zinc-700 focus:border-primary focus:outline-none text-zinc-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none" />
+        <button @click="handleAdd" class="text-xs font-bold text-primary hover:text-primary/80 px-3 py-1 bg-primary/10 rounded-lg border border-primary/20">
+          Criar
+        </button>
+      </div>
+
+      <div v-if="!sheet.data?.resources?.length" class="text-center py-16 text-zinc-600 border border-dashed border-zinc-800 rounded-xl">
+        Nenhum recurso cadastrado.<br>
+        <span class="text-xs">Use "Novo Recurso" para adicionar Fúria, Ki, etc.</span>
+      </div>
+
+      <!-- Resource List -->
+      <div class="space-y-4">
+        <div v-for="(res, i) in sheet.data?.resources" :key="i" class="group rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 relative overflow-hidden">
+          <div class="flex items-center justify-between mb-3 relative z-10">
+            <span class="font-bold text-zinc-200">{{ res.name || res.label }}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold tracking-wide text-zinc-400">{{ res.current ?? res.max }} / {{ res.max }}</span>
+              <button @click="onDelete(i as number)" class="opacity-0 group-hover:opacity-100 text-red-700 hover:text-red-500 transition-all p-1">
+                <Trash2 class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Big bar -->
+          <div class="h-3 bg-zinc-900/80 rounded-full overflow-hidden mb-4 border border-zinc-800 shadow-inner relative z-10 p-0.5">
+            <div class="h-full rounded-full transition-all duration-500 relative overflow-hidden"
+              :style="{
+                width: res.max ? (((res.current ?? res.max) / res.max) * 100) + '%' : '100%',
+                backgroundColor: barColor(res.current ?? res.max, res.max)
+              }">
+              <div class="absolute inset-0 bg-white/20 w-full h-full transform -skew-x-12 -translate-x-full"></div>  
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="flex items-center gap-2 relative z-10">
+            <button @click="onAdjust(i as number, -5)"
+              class="flex-1 py-1.5 rounded bg-zinc-900 border border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors text-xs font-bold">
+              −5
+            </button>
+            <button @click="onAdjust(i as number, -1)"
+              class="flex-1 py-1.5 rounded bg-zinc-900 border border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors text-sm font-bold shadow-sm">
+              −1
+            </button>
+            
+            <button @click="onAdjust(i as number, 1)"
+              class="flex-1 py-1.5 rounded bg-zinc-900 border border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors text-sm font-bold shadow-sm">
+              +1
+            </button>
+            <button @click="onAdjust(i as number, 5)"
+              class="flex-1 py-1.5 rounded bg-zinc-900 border border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors text-xs font-bold">
+              +5
             </button>
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- Big bar -->
-        <div class="h-4 bg-zinc-800 rounded-full overflow-hidden mb-3">
-          <div class="h-full rounded-full transition-all duration-500"
-            :style="{
-              width: res.max ? (((res.current ?? res.max) / res.max) * 100) + '%' : '100%',
-              backgroundColor: barColor(res.current ?? res.max, res.max)
-            }" />
-        </div>
 
-        <!-- Controls -->
-        <div class="flex items-center gap-3">
-          <button @click="onAdjust(i, -5)"
-            class="flex-1 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors text-sm font-bold">
-            −5
-          </button>
-          <button @click="onAdjust(i, -1)"
-            class="flex-1 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors text-sm font-bold">
-            −1
-          </button>
-          <div class="text-center px-4 py-2 rounded-lg border border-zinc-700 bg-zinc-900 min-w-[3rem]">
-            <span class="text-xl font-extrabold font-serif tabular-nums" :style="{ color: barColor(res.current ?? res.max, res.max) }">
-              {{ res.current ?? res.max }}
-            </span>
+    <!-- COL 2: BUFFS -->
+    <div class="space-y-4">
+      <!-- Header Buffs -->
+      <div class="flex items-center justify-between h-[38px]">
+         <div class="flex items-center gap-2">
+            <Flame class="w-4 h-4 text-zinc-500" />
+            <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Buffs & Condições</span>
+         </div>
+        
+        <button @click="onOpenEditor('buff')"
+          class="flex items-center gap-1 text-xs text-orange-500/80 border border-orange-500/30 rounded-lg px-3 py-1.5 hover:bg-orange-500/10 transition-colors">
+          <Plus class="w-3.5 h-3.5" /> Adicionar Buff
+        </button>
+      </div>
+
+      <div v-if="!d?.buffs?.length" class="text-center py-16 text-zinc-600 border border-dashed border-zinc-800 rounded-xl">
+        Nenhum buff ativo no momento.
+      </div>
+
+      <!-- Buff List -->
+       <div class="space-y-2">
+        <div v-for="(buf, i) in d?.buffs" :key="i"
+          class="group rounded-xl border overflow-hidden transition-all duration-200 relative"
+          :class="buf.active
+            ? 'border-orange-500/30 bg-orange-500/5 shadow-[0_0_15px_-3px_rgba(249,115,22,0.1)]'
+            : 'border-zinc-800 bg-zinc-950/60 opacity-60'">
+          
+          <div class="flex items-center gap-3 px-3 py-2.5">
+            <!-- Toggle -->
+            <button @click="onToggleBuff(i as number)"
+              class="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-md shrink-0 transition-all border select-none focus:outline-none"
+              :class="buf.active
+                ? 'bg-orange-500/20 border-orange-500/40 text-orange-400 shadow-inner'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300'">
+              <Flame class="w-3.5 h-3.5" :class="buf.active ? 'fill-orange-500/50 text-orange-400' : ''" />
+              {{ buf.active ? 'Ativo' : 'Off' }}
+            </button>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-sm text-zinc-200 truncate">{{ buf.title }}</div>
+              <div v-if="buf.modifiers?.length" class="text-[10px] text-zinc-500 mt-0.5 truncate uppercase font-semibold tracking-wider">
+                {{ buf.modifiers.map((m: any) => `${m.target} ${modStr(m.value)}`).join(' · ') }}
+              </div>
+            </div>
+
+            <div class="flex gap-1">
+              <button @click="onOpenEditor('buff', buf, i as number)" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-zinc-300 transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+              <button @click="onDeleteBuff(i as number)" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
+                <Trash2 class="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          <button @click="onAdjust(i, 1)"
-            class="flex-1 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors text-sm font-bold">
-            +1
-          </button>
-          <button @click="onAdjust(i, 5)"
-            class="flex-1 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors text-sm font-bold">
-            +5
-          </button>
         </div>
       </div>
     </div>
@@ -2781,21 +4477,14 @@ function getRank(name: string): number {
       </div>
     </div>
 
-    <!-- Table -->
-    <div class="rounded-xl border border-zinc-800 overflow-hidden">
-      <div class="grid grid-cols-[1fr_auto_auto_auto] text-[10px] font-bold uppercase tracking-widest text-zinc-600 px-4 py-2 bg-zinc-900/80 border-b border-zinc-800">
-        <span>Perícia</span>
-        <span class="text-center w-14">Mod</span>
-        <span class="text-center w-20">Ranque</span>
-        <span class="text-center w-14">Total</span>
-      </div>
-
-      <div class="divide-y divide-zinc-900">
+    <!-- Table / Grid -->
+    <div class="rounded-xl border border-zinc-800 bg-zinc-950/40 p-2">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
         <div
           v-for="sk in displayedSkills"
           :key="sk.name"
-          class="grid grid-cols-[1fr_auto_auto_auto] items-center px-4 py-2.5 transition-colors group"
-          :class="!tabsEditMode ? 'cursor-pointer hover:bg-zinc-900/50' : 'hover:bg-zinc-900/30'"
+          class="grid grid-cols-[1fr_auto_auto_auto] items-center px-3 py-2 rounded-lg border border-transparent transition-colors group"
+          :class="!tabsEditMode ? 'cursor-pointer hover:bg-zinc-900 hover:border-zinc-800' : 'hover:bg-zinc-900/30'"
           @click="!tabsEditMode && emit('roll', sk.name, '1d20 + @' + sk.ability + 'Mod')"
         >
           <!-- Name -->
@@ -2815,12 +4504,12 @@ function getRank(name: string): number {
           </div>
 
           <!-- Ability mod -->
-          <div class="text-center w-14 text-xs text-zinc-400 tabular-nums">
+          <div class="text-center w-12 text-xs text-zinc-400 tabular-nums" title="Modificador de Atributo">
             {{ modStrF(skillAbilityMod(sk.ability)) }}
           </div>
 
           <!-- Rank -->
-          <div class="text-center w-20">
+          <div class="text-center w-20" title="Graduações">
             <div v-if="tabsEditMode" class="flex items-center justify-center gap-1">
               <button
                 @click.stop="emit('adjust-rank', sk.name, -1)"
@@ -2832,11 +4521,11 @@ function getRank(name: string): number {
                 class="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-sm flex items-center justify-center text-zinc-400 leading-none"
               >+</button>
             </div>
-            <span v-else class="text-xs text-zinc-500 tabular-nums">{{ getRank(sk.name) }}</span>
+            <span v-else class="text-xs text-zinc-500 tabular-nums">r: {{ getRank(sk.name) }}</span>
           </div>
 
           <!-- Total -->
-          <div class="text-center w-14">
+          <div class="text-center w-12" title="Total">
             <span class="text-sm font-bold tabular-nums"
               :class="skillTotal(sk.name, sk.ability) >= 10 ? 'text-primary' : 'text-zinc-300'">
               {{ modStr(skillTotal(sk.name, sk.ability)) }}
@@ -2844,7 +4533,7 @@ function getRank(name: string): number {
           </div>
         </div>
 
-        <div v-if="!displayedSkills.length" class="text-center py-10 text-zinc-600 text-sm">
+        <div v-if="!displayedSkills.length" class="col-span-1 md:col-span-2 text-center py-10 text-zinc-600 text-sm">
           Nenhuma perícia encontrada.
         </div>
       </div>
@@ -2856,155 +4545,11 @@ function getRank(name: string): number {
 
 
 ---
-## FILE: src/components/sheet/tabs/SpellsTab.vue
-```vue
-<script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Wand2, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next'
-
-const props = defineProps<{
-  d: any
-  editMode: boolean
-  tabsEditMode: boolean
-  spellSlotsMax: Record<number, number>
-  spellSlotsUsed: Record<number, number>
-  SPELL_LEVELS: number[]
-  modStr: (n: number) => string
-  resolveFormula: (formula: string) => string
-  onOpenEditor: (type: string, item?: any, index?: number) => void
-  onDelete: (type: string, index: number) => void
-  onRollItem: (label: string, formula: string, isAtk: boolean, atkF: string, dmgF: string) => void
-  onAdjustSlot: (level: number, delta: number, field: 'used' | 'max') => void
-  onToggleEdit: () => void
-}>()
-
-const expanded = ref<Set<number>>(new Set())
-function toggleExpand(i: number) {
-  if (expanded.value.has(i)) expanded.value.delete(i)
-  else expanded.value.add(i)
-}
-
-const spellsByLevel = computed(() => {
-  const groups: Record<number, { spell: any; index: number }[]> = {}
-  props.d?.spells?.forEach((sp: any, i: number) => {
-    const lv = sp.spellLevel ?? 0
-    if (!groups[lv]) groups[lv] = []
-    groups[lv].push({ spell: sp, index: i })
-  })
-  return groups
-})
-
-const usedLevels = computed(() => Object.keys(spellsByLevel.value).map(Number).sort())
-</script>
-
-<template>
-  <div class="space-y-4">
-    <!-- Tab toolbar -->
-    <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 flex items-center justify-between">
-      <button @click="onToggleEdit"
-        class="text-xs font-bold px-3 py-1.5 rounded-lg border transition-all"
-        :class="tabsEditMode
-          ? 'bg-primary/20 border-primary text-primary'
-          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'">
-        {{ tabsEditMode ? '✓ Concluir' : 'Editar Slots' }}
-      </button>
-      <button @click="onOpenEditor('spell')"
-        class="flex items-center gap-1 text-xs text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1.5 hover:bg-zinc-800 transition-colors">
-        <Plus class="w-3.5 h-3.5" /> Nova Magia
-      </button>
-    </div>
-
-    <!-- Spell Levels -->
-    <div v-for="level in usedLevels" :key="level" class="space-y-2">
-      <!-- Level header with slot tracker -->
-      <div class="flex items-center gap-3 px-1">
-        <div class="flex items-center gap-2">
-          <Wand2 class="w-3.5 h-3.5 text-violet-400" />
-          <span class="text-xs font-black uppercase tracking-widest text-zinc-400">
-            {{ level === 0 ? 'Truques (Nível 0)' : `Nível ${level}` }}
-          </span>
-        </div>
-        <!-- Slot pips -->
-        <div class="flex items-center gap-1 ml-auto">
-          <template v-if="(spellSlotsMax[level] ?? 0) > 0">
-            <button
-              v-for="s in spellSlotsMax[level]" :key="s"
-              @click="onAdjustSlot(level, (s as number) <= (spellSlotsUsed[level] ?? 0) ? -1 : 1, 'used')"
-              class="w-4 h-4 rounded-full border transition-colors"
-              :class="(s as number) <= (spellSlotsUsed[level] ?? 0)
-                ? 'bg-zinc-700 border-zinc-600'
-                : 'bg-violet-500/80 border-violet-400/60 hover:bg-violet-400'"
-            />
-            <template v-if="tabsEditMode">
-              <button @click="onAdjustSlot(level, -1, 'max')" class="ml-1 text-zinc-600 hover:text-zinc-300 text-xs">−</button>
-              <button @click="onAdjustSlot(level, 1, 'max')" class="text-zinc-600 hover:text-zinc-300 text-xs">+</button>
-            </template>
-          </template>
-          <template v-else-if="tabsEditMode">
-            <button @click="onAdjustSlot(level, 1, 'max')" class="text-xs text-primary/60 hover:text-primary border border-primary/20 rounded px-1">+ slot</button>
-          </template>
-        </div>
-      </div>
-
-      <!-- Spells -->
-      <div class="space-y-1.5">
-        <div v-for="{ spell, index } in spellsByLevel[level]" :key="index"
-          class="group rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden hover:border-zinc-700 transition-colors">
-          <div class="flex items-center gap-3 px-4 py-2.5 cursor-pointer" @click="toggleExpand(index)">
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <span class="font-bold text-sm text-violet-200">{{ spell.title }}</span>
-                <span v-if="spell.school" class="text-[10px] text-zinc-600 bg-zinc-800 rounded px-1.5 py-0.5">{{ spell.school }}</span>
-              </div>
-              <div class="flex flex-wrap gap-2 mt-0.5 text-[10px] text-zinc-600">
-                <span v-if="spell.castingTime">⏱ {{ spell.castingTime }}</span>
-                <span v-if="spell.range">📍 {{ spell.range }}</span>
-                <span v-if="spell.duration">⌚ {{ spell.duration }}</span>
-              </div>
-            </div>
-
-            <div class="flex gap-1 items-center">
-              <button v-if="spell.rollFormula" @click.stop="onRollItem(spell.title, spell.rollFormula, false, '', '')"
-                class="text-xs font-bold px-2.5 py-1 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                Rolar
-              </button>
-              <button @click.stop="onOpenEditor('spell', spell, index)" class="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-600 hover:text-zinc-300 transition-all">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-              </button>
-              <button @click.stop="onDelete('spell', index)" class="opacity-0 group-hover:opacity-100 p-1.5 text-red-800 hover:text-red-500 transition-all">
-                <Trash2 class="w-3.5 h-3.5" />
-              </button>
-              <ChevronDown v-if="!expanded.has(index)" class="w-4 h-4 text-zinc-600" />
-              <ChevronUp v-else class="w-4 h-4 text-zinc-600" />
-            </div>
-          </div>
-
-          <div v-if="expanded.has(index) && spell.description" class="border-t border-zinc-800/60 px-4 py-3 bg-zinc-900/30">
-            <p class="text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed">{{ spell.description }}</p>
-            <div v-if="spell.savingThrow || spell.spellResist" class="flex gap-4 mt-2 text-xs text-zinc-500">
-              <span v-if="spell.savingThrow">🛡 {{ spell.savingThrow }}</span>
-              <span v-if="spell.spellResist">RM: {{ spell.spellResist }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="!d?.spells?.length" class="text-center py-12 text-zinc-600 text-sm">
-      Nenhuma magia cadastrada.
-    </div>
-  </div>
-</template>
-
-```
-
-
----
 ## FILE: src/components/sheet/tabs/SummaryTab.vue
 ```vue
 <script setup lang="ts">
-import { ChevronDown, ChevronUp, Swords, Zap, Wand2, Package, Flame } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ChevronDown, ChevronUp, Swords, Zap, Package, Flame, ShieldAlert } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
 import VitalsBlock from '@/components/sheet/blocks/VitalsBlock.vue'
 import AttrsBlock from '@/components/sheet/blocks/AttrsBlock.vue'
 import CombatBlock from '@/components/sheet/blocks/CombatBlock.vue'
@@ -3017,6 +4562,7 @@ const props = defineProps<{
   d: any
   editMode: boolean
   editedData: any
+
   // combat
   totalHP: number
   totalCA: number
@@ -3045,28 +4591,52 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'save-hp'): void
   (e: 'roll', label: string, formula: string): void
-  (e: 'roll-item', label: string, formula: string, isAtk: boolean, atkF: string, dmgF: string): void
+  (e: 'roll-item', item: any): void
   (e: 'add-shortcut'): void
   (e: 'delete-shortcut', i: number): void
   (e: 'add-resource', name: string, max: number): void
   (e: 'adjust-resource', i: number, delta: number): void
   (e: 'reset-resources'): void
   (e: 'delete-resource', i: number): void
+  (e: 'toggle-buff', i: number): void
+  (e: 'toggle-equipped', i: number): void
 }>()
 
 // ── Collapsible summary panels ────────────────────────────────────────
-const openPanels = ref<Set<string>>(new Set())
+const openPanels = ref<string[]>([])
 function togglePanel(id: string) {
-  if (openPanels.value.has(id)) openPanels.value.delete(id)
-  else openPanels.value.add(id)
+  const idx = openPanels.value.indexOf(id)
+  if (idx >= 0) openPanels.value.splice(idx, 1)
+  else openPanels.value.push(id)
+}
+function isPanelOpen(id: string) {
+  return openPanels.value.includes(id)
 }
 
-const SUMMARY_PANELS = [
-  { id: 'spells',    label: 'Magias',       icon: Wand2 },
+const ALL_PANELS = [
+
   { id: 'feats',     label: 'Talentos',     icon: Swords },
   { id: 'equipment', label: 'Equipamentos', icon: Package },
   { id: 'buffs',     label: 'Buffs',        icon: Flame },
 ]
+
+const visiblePanels = computed(() => {
+  const layout = props.d?.resumeLayout
+  if (Array.isArray(layout) && layout.length > 0) {
+    return ALL_PANELS.filter((p: any) => layout.includes(p.id))
+  }
+  return ALL_PANELS
+})
+
+function togglePanelVisibility(id: string) {
+  if (!props.d) return
+  const layout = Array.isArray(props.d.resumeLayout) ? [...props.d.resumeLayout] : ALL_PANELS.map(p => p.id)
+  if (layout.includes(id)) {
+    props.d.resumeLayout = layout.filter(x => x !== id)
+  } else {
+    props.d.resumeLayout = [...layout, id]
+  }
+}
 
 function panelCount(id: string) {
   return (props.d as any)?.[id]?.length ?? 0
@@ -3114,8 +4684,11 @@ function panelCount(id: string) {
         />
 
         <!-- SAVES -->
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 flex flex-col gap-2 justify-center">
-          <div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1 text-center">Salvaguardas</div>
+        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 flex flex-col gap-2 justify-start">
+          <div class="flex items-center gap-2 mb-2">
+            <ShieldAlert class="w-4 h-4 text-zinc-400" />
+            <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Salvaguardas</span>
+          </div>
           <button @click="emit('roll', 'Fortitude', '1d20 + @fort')"
             class="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
             <div class="text-[10px] text-zinc-500 font-bold uppercase mb-0.5">Fortitude</div>
@@ -3134,18 +4707,26 @@ function panelCount(id: string) {
         </div>
 
         <!-- BUFFS mini-list -->
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 overflow-hidden">
+        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 overflow-hidden flex flex-col justify-start">
           <div class="flex items-center gap-2 mb-2">
-            <Flame class="w-3.5 h-3.5 text-zinc-500" />
-            <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Buffs Ativos</span>
+            <Flame class="w-4 h-4 text-zinc-400" />
+            <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Buffs & Condições</span>
           </div>
-          <div v-if="!d?.buffs?.filter((b: any) => b.active).length"
+          <div v-if="!d?.buffs?.length"
             class="text-center py-3 text-zinc-600 text-xs">Nenhum buff.</div>
           <div v-else class="space-y-1 overflow-y-auto max-h-40">
-            <div v-for="(buf, i) in d.buffs.filter((b: any) => b.active)" :key="i"
-              class="flex items-center gap-1.5 py-1 border-b border-zinc-800/40 last:border-0">
-              <Flame class="w-3 h-3 shrink-0 text-primary" />
-              <span class="text-xs text-zinc-200 truncate">{{ buf.title }}</span>
+            <div v-for="(buf, i) in d.buffs" :key="i"
+              class="flex items-center gap-2 py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-800/50 px-1 rounded transition-colors group"
+              @click="emit('toggle-buff', Number(i))">
+              <button 
+                class="flex items-center justify-center w-5 h-5 rounded-md border transition-colors shrink-0"
+                :class="buf.active ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-zinc-900 border-zinc-700 text-zinc-600'">
+                <Flame class="w-3 h-3" :class="buf.active ? 'fill-orange-500/50 text-orange-400' : ''" />
+              </button>
+              <span class="text-xs truncate transition-colors"
+                :class="buf.active ? 'text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-300'">
+                {{ buf.title }}
+              </span>
             </div>
           </div>
         </div>
@@ -3171,13 +4752,13 @@ function panelCount(id: string) {
       />
 
       <!-- Row 3: Atalhos + Recursos -->
-      <div class="grid gap-3" style="grid-template-columns: 1fr auto;">
+      <div class="grid gap-3" style="grid-template-columns: 2fr 1fr;">
         <ShortcutsBlock
           :d="d"
           :mod-str="modStr"
           :resolve-formula="resolveFormula"
           :edit-mode="editMode"
-          :on-roll-item="(l, f, a, af, df) => emit('roll-item', l, f, a, af, df)"
+          :on-roll-item="(item) => emit('roll-item', item)"
           :on-add-shortcut="() => emit('add-shortcut')"
           :on-delete-shortcut="(idx) => emit('delete-shortcut', idx)"
         />
@@ -3194,7 +4775,19 @@ function panelCount(id: string) {
 
     <!-- ── Collapsible panels (Magias / Talentos / Equipamentos / Buffs) ── -->
     <div class="space-y-2 pt-1">
-      <div v-for="panel in SUMMARY_PANELS" :key="panel.id"
+      
+      <!-- Painéis de configuração (Edit Mode) -->
+      <div v-if="editMode" class="flex flex-wrap gap-2 mb-2 p-3 rounded-xl border border-primary/20 bg-primary/5">
+        <span class="text-xs text-primary font-bold w-full mb-1">Painéis Visíveis no Resumo (clique para ativar/desativar):</span>
+        <button v-for="panel in ALL_PANELS" :key="'toggle-'+panel.id"
+          @click="togglePanelVisibility(panel.id)"
+          class="px-2 py-1 rounded border text-xs font-semibold transition-colors"
+          :class="visiblePanels.some(p => p.id === panel.id) ? 'bg-primary text-primary-foreground border-primary' : 'bg-zinc-900 text-zinc-500 border-zinc-700'">
+          {{ panel.label }}
+        </button>
+      </div>
+
+      <div v-for="panel in visiblePanels" :key="panel.id"
         class="rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden">
 
         <!-- Panel header -->
@@ -3206,35 +4799,16 @@ function panelCount(id: string) {
             <span class="text-sm font-bold text-zinc-300">{{ panel.label }}</span>
             <span class="text-xs text-zinc-600 bg-zinc-800 rounded-full px-2 py-0.5">{{ panelCount(panel.id) }}</span>
           </div>
-          <ChevronDown v-if="!openPanels.has(panel.id)" class="w-4 h-4 text-zinc-600" />
+          <ChevronDown v-if="!isPanelOpen(panel.id)" class="w-4 h-4 text-zinc-600" />
           <ChevronUp v-else class="w-4 h-4 text-zinc-600" />
         </button>
 
         <!-- Panel content -->
-        <div v-if="openPanels.has(panel.id)" class="border-t border-zinc-800/50 px-4 py-3 space-y-2">
+        <div v-if="isPanelOpen(panel.id)" class="border-t border-zinc-800/50 px-4 py-3 space-y-2">
 
-          <!-- MAGIAS -->
-          <template v-if="panel.id === 'spells'">
-            <div v-if="!d?.spells?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhuma magia.</div>
-            <div v-else class="space-y-1">
-              <div v-for="(spell, i) in d.spells" :key="i"
-                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0">
-                <div>
-                  <span class="text-sm font-semibold text-violet-200">{{ spell.title }}</span>
-                  <span v-if="spell.school" class="ml-2 text-[10px] text-zinc-600 bg-zinc-800 rounded px-1.5">{{ spell.school }}</span>
-                  <span class="ml-2 text-[10px] text-zinc-600">Nv.{{ spell.spellLevel ?? 0 }}</span>
-                </div>
-                <button v-if="spell.rollFormula"
-                  @click="emit('roll', spell.title, spell.rollFormula)"
-                  class="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                  Rolar
-                </button>
-              </div>
-            </div>
-          </template>
 
           <!-- TALENTOS -->
-          <template v-else-if="panel.id === 'feats'">
+          <template v-if="panel.id === 'feats'">
             <div v-if="!d?.feats?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum talento.</div>
             <div v-else class="space-y-1">
               <div v-for="(feat, i) in d.feats" :key="i"
@@ -3246,7 +4820,7 @@ function panelCount(id: string) {
                   <span class="text-sm font-semibold text-zinc-200">{{ feat.title }}</span>
                 </div>
                 <button v-if="feat.isAttack"
-                  @click="emit('roll-item', feat.title, feat.attackFormula || '', true, feat.attackFormula || '', feat.damageFormula || '')"
+                  @click="emit('roll-item', feat)"
                   class="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
                   Atacar
                 </button>
@@ -3264,15 +4838,20 @@ function panelCount(id: string) {
             <div v-if="!d?.equipment?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum item.</div>
             <div v-else class="space-y-1">
               <div v-for="(item, i) in d.equipment" :key="i"
-                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0">
+                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-600/10 px-2 rounded -mx-2 transition-colors"
+                @click="emit('toggle-equipped', Number(i))">
                 <div>
-                  <span class="text-sm font-semibold"
-                    :class="item.equipped ? 'text-primary/90' : 'text-zinc-300'">{{ item.title }}</span>
+                  <span class="text-sm font-semibold transition-colors"
+                    :class="item.equipped ? 'text-primary/90' : 'text-zinc-300 group-hover:text-zinc-200'">{{ item.title }}</span>
                   <span v-if="item.equipped" class="ml-2 text-[10px] text-primary/50">• equipado</span>
                   <span v-if="item.weight" class="ml-2 text-[10px] text-zinc-600">{{ item.weight }}kg</span>
                 </div>
-                <Package class="w-3.5 h-3.5 shrink-0"
-                  :class="item.equipped ? 'text-primary/60' : 'text-zinc-700'" />
+                <!-- checkbox / switch visual indicator -->
+                <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
+                     :class="item.equipped ? 'border-primary/50 bg-primary/20 justify-end' : 'border-zinc-700 bg-zinc-900 justify-start'">
+                     <div class="w-3 h-3 rounded-full bg-current"
+                          :class="item.equipped ? 'text-primary' : 'text-zinc-500'"></div>
+                </div>
               </div>
             </div>
           </template>
@@ -3282,7 +4861,8 @@ function panelCount(id: string) {
             <div v-if="!d?.buffs?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum buff.</div>
             <div v-else class="space-y-1">
               <div v-for="(buf, i) in d.buffs" :key="i"
-                class="flex items-center gap-3 py-1.5 border-b border-zinc-800/40 last:border-0">
+                class="flex items-center gap-3 py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-600/10 px-2 rounded -mx-2 transition-colors"
+                @click="emit('toggle-buff', Number(i))">
                 <Flame class="w-3.5 h-3.5 shrink-0"
                   :class="buf.active ? 'text-primary' : 'text-zinc-700'" />
                 <div class="flex-1">
@@ -3292,12 +4872,12 @@ function panelCount(id: string) {
                     {{ buf.modifiers.map((m: any) => `${m.target} ${modStr(m.value)}`).join(' · ') }}
                   </div>
                 </div>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                  :class="buf.active
-                    ? 'bg-primary/10 text-primary border-primary/30'
-                    : 'bg-zinc-800 text-zinc-600 border-zinc-700'">
-                  {{ buf.active ? 'Ativo' : 'Inativo' }}
-                </span>
+                <!-- checkbox / switch visual indicator -->
+                <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
+                     :class="buf.active ? 'border-primary/50 bg-primary/20 justify-end' : 'border-zinc-700 bg-zinc-900 justify-start'">
+                     <div class="w-3 h-3 rounded-full bg-current"
+                          :class="buf.active ? 'text-primary' : 'text-zinc-500'"></div>
+                </div>
               </div>
             </div>
           </template>
@@ -4917,65 +6497,6 @@ function handleRankChange(skillName: string, value: string | number) {
 
 
 ---
-## FILE: src/components/wizard/steps/SpellsStep.vue
-```vue
-<script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useWizardStore } from '@/stores/wizardStore'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Trash2 } from 'lucide-vue-next'
-
-const store = useWizardStore()
-const newSpell = ref('')
-
-const spellcastingClasses = ['Bard', 'Cleric', 'Druid', 'Paladin', 'Ranger', 'Sorcerer', 'Wizard']
-const isSpellcaster = computed(() => spellcastingClasses.includes(store.character.class))
-
-function addSpell() {
-  if (newSpell.value.trim()) {
-    store.character.spells.push(newSpell.value.trim())
-    newSpell.value = ''
-  }
-}
-
-function removeSpell(index: number) {
-  store.character.spells.splice(index, 1)
-}
-</script>
-
-<template>
-  <div class="grid gap-6">
-    <div v-if="!isSpellcaster" class="text-center p-8 text-muted-foreground">
-      <p>Sua classe selecionada ({{ store.character.class }}) tipicamente não conjura magias.</p>
-      <p class="text-sm">Você ainda pode adicionar magias se tiver habilidades especiais ou talentos.</p>
-    </div>
-
-    <div class="flex gap-2">
-      <Input v-model="newSpell" placeholder="Nome da magia" @keyup.enter="addSpell" />
-      <Button @click="addSpell">Adicionar Magia</Button>
-    </div>
-
-    <div class="grid gap-2">
-      <Card v-for="(spell, index) in store.character.spells" :key="index" class="p-4 flex justify-between items-center">
-        <span>{{ spell }}</span>
-        <Button variant="ghost" size="icon" @click="removeSpell(index)">
-          <Trash2 class="h-4 w-4" />
-        </Button>
-      </Card>
-      <div v-if="store.character.spells.length === 0"
-        class="text-center text-sm text-muted-foreground p-4 border border-dashed rounded-md">
-        Nenhuma magia adicionada.
-      </div>
-    </div>
-  </div>
-</template>
-
-```
-
-
----
 ## FILE: src/components/wizard/steps/TypeStep.vue
 ```vue
 <script setup lang="ts">
@@ -5100,15 +6621,12 @@ export function useDeleteConfirm(onDelete: (type: string, index: number) => void
 ---
 ## FILE: src/composables/useDndCalculations.ts
 ```typescript
-import { computed, type Ref, type ComputedRef } from 'vue'
+import { computed, type ComputedRef } from 'vue'
 import type { SheetData, Modifier } from '@/types/sheet'
 import { defaultBonuses } from '@/lib/sheetDefaults'
 
 export function useDndCalculations(
-    d: ComputedRef<SheetData | null | undefined>,
-    editMode: ComputedRef<boolean>,
-    editedData: Ref<SheetData | null>,
-    sheet: Ref<any>
+    d: ComputedRef<SheetData | null | undefined>
 ) {
     function calcMod(n: number) { return Math.floor((n - 10) / 2) }
     function modStr(n: number) { return n >= 0 ? `+${n}` : `${n}` }
@@ -5125,10 +6643,7 @@ export function useDndCalculations(
             if (typeof f === 'string') return
             f.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
         })
-        d.value?.spells?.forEach((s: any) => {
-            if (typeof s === 'string') return
-            s.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
-        })
+
         d.value?.shortcuts?.forEach((s: any) => {
             s.modifiers?.forEach((m: Modifier) => bonuses[m.target] = (bonuses[m.target] || 0) + (Number(m.value) || 0))
         })
@@ -5168,34 +6683,34 @@ export function useDndCalculations(
 
     const totalCA = computed(() => {
         if (!d.value) return 10
-        return 10 + (d.value.ca_armor ?? 0) + calcMod(attrTotal('dex'))
-            + (d.value.ca_shield ?? 0) + (d.value.ca_natural ?? 0)
-            + (d.value.ca_deflect ?? 0) + sizeMod.value
-            + (totalBonuses.value['CA'] ?? 0) + (b.value?.ca ?? 0)
+        return 10 + Number(d.value.ca_armor ?? 0) + calcMod(attrTotal('dex'))
+            + Number(d.value.ca_shield ?? 0) + Number(d.value.ca_natural ?? 0)
+            + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value)
+            + Number(totalBonuses.value['CA'] ?? 0) + Number(b.value?.ca ?? 0)
     })
 
     const totalTouch = computed(() => {
         if (!d.value) return 10
-        return 10 + calcMod(attrTotal('dex')) + (d.value.ca_deflect ?? 0) + sizeMod.value + (totalBonuses.value['toque'] ?? 0)
+        return 10 + calcMod(attrTotal('dex')) + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value) + Number(totalBonuses.value['toque'] ?? 0)
     })
 
     const totalFlatFooted = computed(() => {
         if (!d.value) return 10
-        return 10 + (d.value.ca_armor ?? 0) + (d.value.ca_shield ?? 0) + (d.value.ca_natural ?? 0) + (d.value.ca_deflect ?? 0) + sizeMod.value + (totalBonuses.value['surpreso'] ?? 0)
+        return 10 + Number(d.value.ca_armor ?? 0) + Number(d.value.ca_shield ?? 0) + Number(d.value.ca_natural ?? 0) + Number(d.value.ca_deflect ?? 0) + Number(sizeMod.value) + Number(totalBonuses.value['surpreso'] ?? 0)
     })
 
-    const totalBAB = computed(() => (d.value?.bab || 0) + (totalBonuses.value.bab || 0) + (b.value?.bab ?? 0))
-    const totalInitiative = computed(() => calcMod(attrTotal('dex')) + (d.value?.initiative_misc || 0) + (totalBonuses.value.iniciativa || 0) + (b.value?.initiative ?? 0))
-    const totalHP = computed(() => (d.value?.hp_max || 0) + (totalBonuses.value.hp || 0) + (b.value?.hp ?? 0))
-    const totalSpeed = computed(() => (d.value?.speed || 9) + (totalBonuses.value.speed || 0) + (b.value?.speed ?? 0))
+    const totalBAB = computed(() => Number(d.value?.bab || 0) + Number(totalBonuses.value.bab || 0) + Number(b.value?.bab ?? 0))
+    const totalInitiative = computed(() => calcMod(attrTotal('dex')) + Number(d.value?.initiative_misc || 0) + Number(totalBonuses.value.iniciativa || 0) + Number(b.value?.initiative ?? 0))
+    const totalHP = computed(() => Number(d.value?.hp_max || 0) + Number(totalBonuses.value.hp || 0) + Number(b.value?.hp ?? 0))
+    const totalSpeed = computed(() => Number(d.value?.speed ?? 9) + Number(totalBonuses.value.speed || 0) + Number(b.value?.speed ?? 0))
 
-    const meleeAtk = computed(() => totalBAB.value + calcMod(attrTotal('str')) + sizeMod.value + (totalBonuses.value.melee || 0))
-    const rangedAtk = computed(() => totalBAB.value + calcMod(attrTotal('dex')) + sizeMod.value + (totalBonuses.value.ranged || 0))
-    const grappleAtk = computed(() => totalBAB.value + calcMod(attrTotal('str')) + (sizeMod.value * 4) + (totalBonuses.value.grapple || 0))
+    const meleeAtk = computed(() => Number(totalBAB.value) + calcMod(attrTotal('str')) + Number(sizeMod.value) + Number(totalBonuses.value.melee || 0))
+    const rangedAtk = computed(() => Number(totalBAB.value) + calcMod(attrTotal('dex')) + Number(sizeMod.value) + Number(totalBonuses.value.ranged || 0))
+    const grappleAtk = computed(() => Number(totalBAB.value) + calcMod(attrTotal('str')) + (Number(sizeMod.value) * 4) + Number(totalBonuses.value.grapple || 0))
 
-    const totalFort = computed(() => (d.value?.save_fort || 0) + calcMod(attrTotal('con')) + (totalBonuses.value.fort || 0) + (b.value?.saves?.fort ?? 0))
-    const totalRef = computed(() => (d.value?.save_ref || 0) + calcMod(attrTotal('dex')) + (totalBonuses.value.ref || 0) + (b.value?.saves?.ref ?? 0))
-    const totalWill = computed(() => (d.value?.save_will || 0) + calcMod(attrTotal('wis')) + (totalBonuses.value.will || 0) + (b.value?.saves?.will ?? 0))
+    const totalFort = computed(() => Number(d.value?.save_fort || 0) + calcMod(attrTotal('con')) + Number(totalBonuses.value.fort || 0) + Number(b.value?.saves?.fort ?? 0))
+    const totalRef = computed(() => Number(d.value?.save_ref || 0) + calcMod(attrTotal('dex')) + Number(totalBonuses.value.ref || 0) + Number(b.value?.saves?.ref ?? 0))
+    const totalWill = computed(() => Number(d.value?.save_will || 0) + calcMod(attrTotal('wis')) + Number(totalBonuses.value.will || 0) + Number(b.value?.saves?.will ?? 0))
 
     const deathStatus = computed(() => {
         const hp = d.value?.hp_current ?? 0
@@ -5319,7 +6834,7 @@ export function useDragReorder(
 ---
 ## FILE: src/composables/useRolls.ts
 ```typescript
-import type { Ref, ComputedRef } from 'vue'
+import type { ComputedRef } from 'vue'
 
 export interface RollContext {
     attrTotal: (key: string) => number
@@ -5339,7 +6854,7 @@ export interface RollContext {
     totalWill: ComputedRef<number>
     d: ComputedRef<any>
     onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
-    onDualRoll?: (label: string, atkDisplay: string, dmgDisplay: string, atkEval: string, dmgEval: string) => void
+    onAttackRoll?: (label: string, attackFormula: string, damageFormula: string) => void
 }
 
 const FORMULA_RE = /@(\w+)/g
@@ -5396,54 +6911,27 @@ export function useRolls(ctx: RollContext) {
     function handleItemRoll(item: any) {
         if (typeof item === 'string') return
 
-        if (item.isAttack && ctx.onDualRoll && item.attackFormula && item.damageFormula) {
+        if (item.isAttack && ctx.onAttackRoll && item.attackFormula && item.damageFormula) {
             let atkDisplay = item.attackFormula
             let dmgDisplay = item.damageFormula
-            let atkEval = resolveFormula(atkDisplay)
-            let dmgEval = resolveFormula(dmgDisplay)
 
             const bonus = Number(item.attackBonus) || 0
             if (bonus) {
                 const bonusStr = bonus >= 0 ? `+${bonus}` : `${bonus}`
                 atkDisplay = `${atkDisplay} ${bonusStr}`
-                atkEval = `${atkEval} ${bonusStr}`
             }
 
-            atkEval = sanitizeFormula(atkEval)
-            dmgEval = sanitizeFormula(dmgEval)
+            // Resolve @refs and sanitize so DiceRoller can evaluate the formulas
+            const atkEval = sanitizeFormula(resolveFormula(atkDisplay))
+            const dmgEval = sanitizeFormula(resolveFormula(dmgDisplay))
 
-            ctx.onDualRoll(item.title, atkDisplay, dmgDisplay, atkEval, dmgEval)
+            ctx.onAttackRoll(item.title, atkEval, dmgEval)
         } else {
             handleRoll(item.title, item.rollFormula || '1d20', Number(item.attackBonus) || 0)
         }
     }
 
-    function sendSpellToChat(spell: any) {
-        if (!ctx.onRoll) return
-        const title = typeof spell === 'string' ? spell : spell.title
-        const desc = typeof spell === 'string' ? '' : spell.description
-        const formula = typeof spell === 'string' ? '' : spell.rollFormula
-
-        let content = `**Magia: ${title}**`
-        if (spell.school) content += ` (${spell.school})`
-        content += `\n`
-        if (spell.spellLevel !== undefined) content += `*Nível ${spell.spellLevel}*\n`
-        if (spell.castingTime) content += `**Execução:** ${spell.castingTime} | `
-        if (spell.range) content += `**Alcance:** ${spell.range}\n`
-        if (spell.target) content += `**Alvo:** ${spell.target} | `
-        if (spell.duration) content += `**Duração:** ${spell.duration}\n`
-        if (spell.savingThrow) content += `**Resistência:** ${spell.savingThrow} | `
-        if (spell.spellResist) content += `**RM:** ${spell.spellResist}\n`
-        if (desc) content += `\n${resolveFormula(desc)}`
-
-        if (formula) {
-            handleRoll(title, formula)
-        } else {
-            ctx.onRoll(content, '', '')
-        }
-    }
-
-    return { resolveFormula, handleRoll, handleItemRoll, sendSpellToChat }
+    return { resolveFormula, handleRoll, handleItemRoll }
 }
 
 ```
@@ -5541,7 +7029,7 @@ export function useSheetEdit(sheet: Ref<Sheet | null>, onSave: (data: SheetData)
         const copy = JSON.parse(JSON.stringify(sheet.value.data))
         if (!copy.bonuses) copy.bonuses = defaultBonuses()
         if (!copy.feats) copy.feats = []
-        if (!copy.spells) copy.spells = []
+
         if (!copy.shortcuts) copy.shortcuts = []
         if (copy.xp === undefined) copy.xp = 0
         if (!copy.buffs) copy.buffs = []
@@ -5549,12 +7037,8 @@ export function useSheetEdit(sheet: Ref<Sheet | null>, onSave: (data: SheetData)
         editedData.value = copy
     }
 
-    async function saveEdit(spellSlotsMax?: any, spellSlotsUsed?: any) {
+    async function saveEdit() {
         if (!editedData.value || !sheet.value) return
-
-        // Persist spell slots as part of sheet data
-        if (spellSlotsMax) editedData.value.spellSlotsMax = { ...spellSlotsMax }
-        if (spellSlotsUsed) editedData.value.spellSlotsUsed = { ...spellSlotsUsed }
 
         // Sync live-saved fields (HP, Recursos, Atalhos) back so they aren't overwritten
         if (sheet.value.data) {
@@ -5717,58 +7201,6 @@ export function useSkills(
         addLevelUpSkillPoints,
         skillPointsSpent,
         activeSkills
-    }
-}
-
-```
-
-
----
-## FILE: src/composables/useSpellSlots.ts
-```typescript
-import { ref, computed, watch, type Ref, type ComputedRef } from 'vue'
-
-const SPELL_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-
-export function useSpellSlots(sheet: Ref<any>) {
-    const spellSlotsMax = ref<Record<number, number>>({})
-    const spellSlotsUsed = ref<Record<number, number>>({})
-
-    function initSpellSlots() {
-        SPELL_LEVELS.forEach(lvl => {
-            if (spellSlotsMax.value[lvl] === undefined) spellSlotsMax.value[lvl] = 0
-            if (spellSlotsUsed.value[lvl] === undefined) spellSlotsUsed.value[lvl] = 0
-        })
-    }
-
-    function adjustSlotUsed(level: number, delta: number) {
-        const max = spellSlotsMax.value[level] ?? 0
-        const cur = spellSlotsUsed.value[level] ?? 0
-        spellSlotsUsed.value[level] = Math.max(0, Math.min(max, cur + delta))
-    }
-
-    function adjustSlotMax(level: number, delta: number) {
-        const cur = spellSlotsMax.value[level] ?? 0
-        spellSlotsMax.value[level] = Math.max(0, cur + delta)
-        if ((spellSlotsUsed.value[level] ?? 0) > spellSlotsMax.value[level])
-            spellSlotsUsed.value[level] = spellSlotsMax.value[level]
-    }
-
-    watch(() => (sheet as any).value?.data, (newData: any) => {
-        if (newData) {
-            spellSlotsMax.value = newData.spellSlotsMax ?? {}
-            spellSlotsUsed.value = newData.spellSlotsUsed ?? {}
-            initSpellSlots()
-        }
-    }, { immediate: true })
-
-    return {
-        SPELL_LEVELS,
-        spellSlotsMax,
-        spellSlotsUsed,
-        initSpellSlots,
-        adjustSlotUsed,
-        adjustSlotMax
     }
 }
 
@@ -6028,7 +7460,6 @@ export function defaultSheetData(): Partial<SheetData> {
     return {
         bonuses: defaultBonuses(),
         feats: [],
-        spells: [],
         equipment: [],
         shortcuts: [],
         buffs: [],
@@ -6073,7 +7504,12 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { DiceRoller } from '@dice-roller/rpg-dice-roller'
 
-export function useCampaignRolls(campaignId: string, memberName: Ref<string>, recipientId: Ref<string>) {
+export function useCampaignRolls(
+    campaignId: string,
+    memberName: Ref<string>,
+    recipientId: Ref<string>,
+    avatarUrl?: Ref<string | null>
+) {
     const authStore = useAuthStore()
     const roller = new DiceRoller()
     const rolling = ref(false)
@@ -6125,6 +7561,8 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
             campaign_id: campaignId,
             user_id: authStore.user?.id ?? null,
             sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
             content,
             type: isWhisper ? 'whisper' : 'roll',
         })
@@ -6134,32 +7572,29 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
         rolling.value = false
     }
 
-    async function sendDualRoll(label: string, atkDisplay: string, dmgDisplay: string, atkEval?: string, dmgEval?: string) {
-        if (rolling.value) return
+    async function sendAttackRoll(
+        label: string,
+        attackFormula: string,
+        damageFormula: string
+    ): Promise<string | null> {
+        if (rolling.value) return null
         rolling.value = true
 
-        const atkFormula = atkEval || atkDisplay
-        const dmgFormula = dmgEval || dmgDisplay
-
-        const atkResult = evaluateFormula(atkFormula)
-        const dmgResult = evaluateFormula(dmgFormula)
-
         const isWhisper = recipientId.value !== 'all'
+        const attackResult = evaluateFormula(attackFormula)
 
         const payload: any = {
             label,
-            is_dual_roll: true,
-            is_roll: true, // for whisper chat filter detection
+            is_attack: true,
+            is_roll: true, // for backward compatibility or whisper chat filter detection
             attack: {
-                formula: atkDisplay,
-                result: atkResult.result,
-                breakdown: atkResult.breakdown
+                formula: attackFormula,
+                result: attackResult.result,
+                breakdown: attackResult.breakdown
             },
-            damage: {
-                formula: dmgDisplay,
-                result: dmgResult.result,
-                breakdown: dmgResult.breakdown
-            }
+            damage: null,
+            damage_formula: damageFormula,
+            damage_pending: true
         }
 
         if (isWhisper) {
@@ -6168,24 +7603,82 @@ export function useCampaignRolls(campaignId: string, memberName: Ref<string>, re
 
         const content = JSON.stringify(payload)
 
-        const { error } = await supabase.from('messages').insert({
+        const { data, error } = await supabase.from('messages').insert({
             campaign_id: campaignId,
             user_id: authStore.user?.id ?? null,
             sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
             content,
             type: isWhisper ? 'whisper' : 'roll',
-        })
+        }).select('id').single()
 
-        if (error) console.error('Error sending dual roll:', error)
+        if (error) console.error('Error sending attack roll:', error)
 
         rolling.value = false
+        return data?.id || null
+    }
+
+    async function rollDamage(messageId: string, damageFormula: string): Promise<void> {
+        if (rolling.value) return
+        rolling.value = true
+
+        const { data: msgToUpdate, error: fetchError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('id', messageId)
+            .single()
+
+        if (fetchError || !msgToUpdate) {
+            console.error('Could not find message to update', fetchError)
+            rolling.value = false
+            return
+        }
+
+        let parsedContent
+        try {
+            parsedContent = JSON.parse(msgToUpdate.content)
+        } catch {
+            rolling.value = false
+            return
+        }
+
+        const damageResult = evaluateFormula(damageFormula)
+
+        const payload = {
+            ...parsedContent,
+            damage: {
+                formula: damageFormula,
+                result: damageResult.result,
+                breakdown: damageResult.breakdown
+            },
+            damage_pending: false
+        }
+
+        const { error } = await supabase.from('messages').update({
+            content: JSON.stringify(payload)
+        }).eq('id', messageId)
+
+        if (error) console.error('Error updating damage roll:', error)
+        rolling.value = false
+    }
+
+    async function deleteMessage(messageId: string): Promise<boolean> {
+        const { error } = await supabase.from('messages').delete().eq('id', messageId)
+        if (error) {
+            console.error('Error deleting message:', error)
+            return false
+        }
+        return true
     }
 
     return {
         rolling,
         sendRoll,
-        sendDualRoll,
+        sendAttackRoll,
+        rollDamage,
         evaluateFormula,
+        deleteMessage,
         modStr
     }
 }
@@ -6229,7 +7722,6 @@ app.mount('#app')
 ## FILE: src/router/index.ts
 ```typescript
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
@@ -6396,7 +7888,6 @@ export const useWizardStore = defineStore('wizard', () => {
         skills: {} as Record<string, number>,
         skillPoints: 0,
         feats: [] as string[],
-        spells: [] as string[],
         equipment: [] as string[],
         bio: '',
         alignment: '',
@@ -6626,21 +8117,6 @@ export interface Feat {
     modifiers?: Modifier[]
 }
 
-export interface Spell {
-    title: string
-    description: string
-    rollFormula?: string
-    school?: string
-    spellLevel?: number
-    castingTime?: string
-    range?: string
-    target?: string
-    duration?: string
-    savingThrow?: string
-    spellResist?: string
-    modifiers?: Modifier[]
-}
-
 export interface Equipment {
     title: string
     description: string
@@ -6688,7 +8164,6 @@ export interface SheetData {
     bonuses: BonusData
     skills: Record<string, number>
     feats: Feat[]
-    spells: Spell[]
     equipment: Equipment[]
     shortcuts: Shortcut[]
     buffs: Buff[]
@@ -6696,8 +8171,6 @@ export interface SheetData {
     layout?: string[]
     resumeLayout?: string[]
     hiddenBlocks?: string[]
-    spellSlotsMax?: Record<number, number>
-    spellSlotsUsed?: Record<number, number>
     ca_armor?: number
     ca_shield?: number
     ca_natural?: number
@@ -6735,15 +8208,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
-import { Copy, BookOpen, Scroll, FileText, LayoutTemplate } from 'lucide-vue-next'
+import { Copy, BookOpen, Scroll, FileText, LayoutTemplate, MessageSquare, LogOut } from 'lucide-vue-next'
 import ChatSidebar from '@/components/campaign/ChatSidebar.vue'
 import QuickNpcModal from '@/components/campaign/QuickNpcModal.vue'
 import SheetView from '@/views/SheetView.vue'
 import { useCampaignRolls } from '@/lib/useCampaignRolls'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import SheetSelectorModal from '@/components/campaign/SheetSelectorModal.vue'
-import CampaignSettingsDropdown from '@/components/campaign/CampaignSettingsDropdown.vue'
+import NotepadPanel from '@/components/campaign/notepad/NotepadPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -6759,8 +8230,7 @@ const showSheetSelector = ref(false)
 
 // UI state
 const showChat = ref(true)
-const showNotes = ref(false) // For mobile view
-const notepadContent = ref('')
+const showNotes = ref(false)
 
 // Sheet selector state
 const mySheets = ref<any[]>([])
@@ -6768,18 +8238,6 @@ const selectedSheetId = ref<string>('none')
 const myMemberId = ref<string>('')
 const savingSheet = ref(false)
 const sheetSaved = ref(false)
-
-// Remove setting selectedSheetId from onMounted to prevent race conditions
-onMounted(() => {
-    const savedNote = localStorage.getItem(`notepad_${campaignId}_${authStore.user?.id}`)
-    if (savedNote) {
-        notepadContent.value = savedNote
-    }
-})
-
-function saveNotepad() {
-    localStorage.setItem(`notepad_${campaignId}_${authStore.user?.id}`, notepadContent.value)
-}
 
 const myCurrentSheetId = computed(() => {
     return selectedSheetId.value === 'none' ? null : selectedSheetId.value
@@ -6792,9 +8250,19 @@ const myMemberName = computed(() => {
     return authStore.user?.user_metadata?.name || 'Jogador'
 })
 
+const myAvatarUrl = computed(() => {
+    if (isDM.value) return null
+    const activeSheet = mySheets.value.find(s => s.id === selectedSheetId.value)
+    if (!activeSheet?.data) return null
+    const data = typeof activeSheet.data === 'string' 
+      ? JSON.parse(activeSheet.data) 
+      : activeSheet.data
+    return data.avatar_url || null
+})
+
 const recipientId = ref('all')
 
-const { sendRoll, sendDualRoll } = useCampaignRolls(campaignId, myMemberName, recipientId)
+const { sendRoll, sendAttackRoll } = useCampaignRolls(campaignId, myMemberName, recipientId, myAvatarUrl)
 
 async function fetchCampaign() {
     loading.value = true
@@ -6953,40 +8421,78 @@ onMounted(async () => {
                 </div>
 
                 <!-- Navigation Controls -->
-                <div class="flex items-center gap-2 sm:gap-3">
-                  
-                    <!-- Switch Sheet Button -->
-                    <div class="flex items-center gap-2">
-                         <div v-if="sheetSaved" class="text-[10px] text-green-500 font-bold uppercase hidden sm:block">
-                            Ativa
-                         </div>
-                         <Button @click="showSheetSelector = true" variant="outline" size="sm" class="h-8 group border-zinc-700 hover:bg-zinc-800 bg-zinc-900">
-                             <LayoutTemplate class="w-4 h-4 mr-2 text-muted-foreground group-hover:text-primary transition-colors" />
-                             <span class="text-xs">{{ selectedSheetId === 'none' ? 'Espectador' : 'Trocar Ficha' }}</span>
-                         </Button>
-                    </div>
+                <nav class="flex items-center gap-1">
 
-                    <Button v-if="isDM" @click="showNpcModal = true" variant="outline" size="sm"
-                        class="h-8 text-xs border-zinc-700 hover:bg-zinc-800 hidden md:inline-flex">
-                        Criar NPC
-                    </Button>
+                    <!-- Notas -->
+                    <button
+                      @click="showNotes = !showNotes"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showNotes
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <BookOpen class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Notas</span>
+                    </button>
 
+                    <!-- Chat -->
+                    <button
+                      @click="showChat = !showChat"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showChat
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <MessageSquare class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Chat</span>
+                    </button>
+
+
+                    <!-- Trocar Ficha -->
+                    <button
+                      @click="showSheetSelector = true"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors border',
+                        sheetSaved
+                          ? 'border-green-600/40 bg-green-600/10 text-green-400'
+                          : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <LayoutTemplate class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">{{ selectedSheetId === 'none' ? 'Espectador' : 'Trocar Ficha' }}</span>
+                    </button>
+
+
+                    <!-- DM: Join Code -->
                     <div v-if="campaign && isDM"
-                        class="hidden md:flex items-center gap-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
-                        <span class="text-xs text-muted-foreground uppercase font-bold">Código:</span>
-                        <code class="text-sm font-mono text-primary font-bold">{{ campaign.join_code }}</code>
+                        class="hidden md:flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-md border border-zinc-800 h-8">
+                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Código:</span>
+                        <code class="text-xs font-mono text-primary font-bold">{{ campaign.join_code }}</code>
                         <button @click="copyJoinCode" class="text-muted-foreground hover:text-foreground">
-                            <Copy class="w-3.5 h-3.5" />
+                            <Copy class="w-3 h-3" />
                         </button>
                     </div>
 
-                    <!-- Settings Dropdown -->
-                    <CampaignSettingsDropdown 
-                         v-model:show-chat="showChat"
-                         v-model:show-notes="showNotes"
-                         @leave="leaveCampaign"
-                    />
-                </div>
+                    <!-- DM: Criar NPC -->
+                    <button v-if="isDM" @click="showNpcModal = true"
+                        class="hidden md:flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                        Criar NPC
+                    </button>
+
+                    <!-- Sair -->
+                    <button
+                      @click="leaveCampaign"
+                      class="flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Sair</span>
+                    </button>
+                </nav>
+
             </header>
 
             <!-- Workspace Setup: Notepad (Left) + Sheet (Center) -->
@@ -6996,29 +8502,19 @@ onMounted(async () => {
                 </div>
 
                 <!-- Notepad (Left Panel) -->
-                <div v-show="showNotes" class="w-full lg:w-80 border-r border-border bg-zinc-950/30 flex flex-col absolute inset-0 z-20 lg:relative lg:z-0 lg:flex"
-                     :class="showNotes ? 'flex' : 'hidden lg:flex'">
-                    <div class="h-10 border-b border-border flex items-center justify-between px-4 bg-zinc-950/50 shrink-0">
-                        <h2 class="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                            <BookOpen class="w-3.5 h-3.5" /> Anotações Pessoais
-                        </h2>
-                        <Button variant="ghost" size="icon" class="h-6 w-6 lg:hidden" @click="showNotes = false">
-                             <Copy class="w-3 h-3 rotate-45" /> <!-- X Icon replacement mapping trick -->
-                        </Button>
-                    </div>
-                    <div class="flex-1 p-3">
-                        <Textarea v-model="notepadContent" @input="saveNotepad"
-                            placeholder="Anotações da campanha... Suas notas são salvas apenas para você."
-                            class="w-full h-full resize-none border-none bg-transparent focus-visible:ring-0 p-1 text-sm text-zinc-300 placeholder:text-zinc-600 font-mono" />
-                    </div>
-                </div>
+                <NotepadPanel 
+                  v-if="showNotes"
+                  :campaign-id="campaignId"
+                  :visible="showNotes"
+                  @close="showNotes = false"
+                />
 
                 <!-- Character Sheet (Center Panel) -->
                 <div class="flex-1 overflow-y-auto bg-background px-0 sm:px-4 lg:px-8 py-0 sm:py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700" 
                      :class="{ 'hidden lg:block': showNotes || (showChat && !myCurrentSheetId) }">
                     <div v-if="myCurrentSheetId" class="h-full">
                         <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
-                            :on-dual-roll="sendDualRoll" />
+                            :on-attack-roll="sendAttackRoll" />
                     </div>
                     <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
                         <FileText class="w-12 h-12 text-zinc-800" />
@@ -7033,7 +8529,7 @@ onMounted(async () => {
         </main>
 
         <!-- Chat Sidebar -->
-        <ChatSidebar v-show="showChat" :campaign-id="campaignId" :member-name="myMemberName" :members="members" :dm-id="campaign?.dm_id"
+        <ChatSidebar v-show="showChat" :campaign-id="campaignId" :member-name="myMemberName" :avatar-url="myAvatarUrl" :members="members" :dm-id="campaign?.dm_id"
             v-model:recipientId="recipientId" class="w-full lg:w-96 flex-shrink-0" :class="{ 'hidden lg:flex': !showChat }" />
 
         <!-- Modals -->
@@ -7606,7 +9102,7 @@ const colorTokens = [
 ```vue
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7615,7 +9111,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const isLogin = ref(true)
@@ -7941,19 +9436,20 @@ import { supabase } from '@/lib/supabase'
 import SummaryTab from '@/components/sheet/tabs/SummaryTab.vue'
 import SkillsTab from '@/components/sheet/tabs/SkillsTab.vue'
 import FeatsTab from '@/components/sheet/tabs/FeatsTab.vue'
-import SpellsTab from '@/components/sheet/tabs/SpellsTab.vue'
+
 import EquipmentTab from '@/components/sheet/tabs/EquipmentTab.vue'
 import ResourcesTab from '@/components/sheet/tabs/ResourcesTab.vue'
-import BuffsTab from '@/components/sheet/tabs/BuffsTab.vue'
 import ConfigTab from '@/components/sheet/tabs/ConfigTab.vue'
 
 // Shared components
 import ItemEditorModal from '@/components/sheet/ItemEditorModal.vue'
+import HeaderBlock from '@/components/sheet/blocks/HeaderBlock.vue'
+import CoreDataEditorModal from '@/components/sheet/CoreDataEditorModal.vue'
 
 // Icons
 import {
-  LayoutDashboard, Dices, Swords, Wand2, Package,
-  Shield, Flame, Settings, ChevronLeft, Loader2
+  LayoutDashboard, Dices, Swords, Package,
+  Shield, Settings, ChevronLeft, Loader2
 } from 'lucide-vue-next'
 
 // Composables & types
@@ -7965,7 +9461,6 @@ import { useDeleteConfirm } from '@/composables/useDeleteConfirm'
 import { useDndCalculations } from '@/composables/useDndCalculations'
 import { useRolls } from '@/composables/useRolls'
 import { useSkills } from '@/composables/useSkills'
-import { useSpellSlots } from '@/composables/useSpellSlots'
 
 const route = useRoute()
 const router = useRouter()
@@ -7974,7 +9469,7 @@ const props = defineProps<{
   sheetId?: string
   isEmbedded?: boolean
   onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
-  onDualRoll?: (label: string, atkDisplay: string, dmgDisplay: string, atkEval: string, dmgEval: string) => void
+  onAttackRoll?: (label: string, attackFormula: string, damageFormula: string) => void
 }>()
 
 const currentSheetId = computed(() => props.sheetId || route.params.id as string)
@@ -7997,28 +9492,25 @@ const {
   meleeAtk, rangedAtk, grappleAtk,
   totalFort, totalRef, totalWill,
   deathStatus, totalWeight, adjustField
-} = useDndCalculations(d, editMode, editedData, sheet)
+} = useDndCalculations(d)
 
 const { resolveFormula, handleRoll, handleItemRoll } = useRolls({
   attrTotal, calcMod, modStr,
   totalCA, totalTouch, totalFlatFooted,
   totalBAB, meleeAtk, rangedAtk, grappleAtk,
   totalHP, totalInitiative, totalFort, totalRef, totalWill,
-  d, onRoll: props.onRoll, onDualRoll: props.onDualRoll
+  d, onRoll: props.onRoll, onAttackRoll: props.onAttackRoll
 })
 
 const { skillPhase, skillSearch, isClassSkill, filteredSkillsList, toggleSkillEdit, skillAbilityMod, skillTotal, adjustRank, addLevelUpSkillPoints, skillPointsSpent, activeSkills } = useSkills(d, editedData, editMode, sheet, calcMod, attrTotal, totalBonuses)
-const { SPELL_LEVELS, spellSlotsMax, spellSlotsUsed, adjustSlotUsed, adjustSlotMax } = useSpellSlots(sheet)
 
 // ── Tabs ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'summary', label: 'Resumo', icon: LayoutDashboard },
   { id: 'skills', label: 'Perícias', icon: Dices },
   { id: 'feats', label: 'Talentos', icon: Swords },
-  { id: 'spells', label: 'Magias', icon: Wand2 },
   { id: 'equipment', label: 'Itens', icon: Package },
-  { id: 'resources', label: 'Recursos', icon: Shield },
-  { id: 'buffs', label: 'Buffs', icon: Flame },
+  { id: 'resources', label: 'Recursos & Buffs', icon: Shield },
   { id: 'config', label: 'Config', icon: Settings },
 ]
 
@@ -8051,7 +9543,10 @@ async function saveCurrentHP() {
 }
 
 async function saveEdit() {
-  await saveEditComp(spellSlotsMax.value, spellSlotsUsed.value)
+  await saveEditComp()
+  if (sheet.value) {
+    await saveSheet()
+  }
 }
 function toggleTabsEdit() {
   if (!tabsEditMode.value) skillPhase.value = 'select'
@@ -8061,7 +9556,7 @@ function toggleTabsEdit() {
 // ── Delete ─────────────────────────────────────────────────────────────
 const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelete } = useDeleteConfirm(async (type, index) => {
   if (sheet.value?.data) {
-    const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
+    const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
     const key = map[type]
     if (key && Array.isArray((sheet.value.data as any)[key])) {
       (sheet.value.data as any)[key].splice(index, 1)
@@ -8070,9 +9565,10 @@ const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelet
   }
 })
 
-// ── Item Editor ────────────────────────────────────────────────────────
+// ── Item & Core Editor ──────────────────────────────────────────────────
 const editorOpen = ref(false)
-const editorType = ref<'feat' | 'spell' | 'shortcut' | 'equipment' | 'buff'>('feat')
+const coreEditorOpen = ref(false)
+const editorType = ref<'feat' | 'shortcut' | 'equipment' | 'buff'>('feat')
 const editorItem = ref<any>(null)
 const editorIndex = ref(-1)
 
@@ -8089,7 +9585,7 @@ function openEquipmentEditor(item?: any, index = -1) {
 
 function handleEditorSave(data: any) {
   if (!sheet.value) return
-  const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
+  const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
   const key = map[editorType.value]
   if (!key) return
   if (!(sheet.value.data as any)[key]) (sheet.value.data as any)[key] = []
@@ -8098,6 +9594,25 @@ function handleEditorSave(data: any) {
   else list.push(data)
   saveSheet()
 }
+
+async function handleCoreSave(meta: { name: string; class: string; level: number; race: string }, data: any) {
+  if (!sheet.value) return
+  // Update local
+  sheet.value.name = meta.name
+  sheet.value.class = meta.class
+  sheet.value.level = meta.level
+  sheet.value.race = meta.race
+  sheet.value.data = data
+  // Save both sets
+  try {
+    await saveSheetMeta(sheet.value.id, meta)
+    await saveSheetData(sheet.value.id, data)
+  } catch (err: any) {
+    alert('Erro ao salvar dados principais: ' + err.message)
+  }
+}
+
+
 
 // ── Resources ───────────────────────────────────────────────────────────
 function addResource(name: string, max: number) {
@@ -8143,12 +9658,6 @@ function toggleBuff(i: number) {
   }
 }
 
-// ── Slot adjustments ───────────────────────────────────────────────────
-function handleAdjustSlot(level: number, delta: number, field: 'used' | 'max') {
-  if (field === 'used') adjustSlotUsed(level, delta)
-  else adjustSlotMax(level, delta)
-}
-
 // ── Fetch ──────────────────────────────────────────────────────────────
 async function fetchSheet() {
   if (!currentSheetId.value) return
@@ -8184,31 +9693,22 @@ onMounted(fetchSheet)
       </div>
 
       <template v-else-if="sheet && d">
-        <!-- Character name bar -->
-        <div class="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <h1 class="text-xl font-extrabold font-serif text-zinc-100 leading-tight">{{ sheet.name }}</h1>
-            <p class="text-xs text-zinc-500 mt-0.5">
-              {{ sheet.race }} · {{ sheet.class }} · Nível {{ sheet.level }}
-              <span v-if="d.alignment" class="ml-1 text-zinc-600">· {{ d.alignment }}</span>
-            </p>
-          </div>
-          <!-- Edit mode badge -->
-          <div v-if="editMode" class="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5 text-xs font-bold text-primary">
-            ✏️ Modo Edição
-            <button @click="toggleTabsEdit" class="hover:text-primary/70 transition-colors ml-1">Salvar</button>
-          </div>
-        </div>
+        <HeaderBlock
+          :sheet="sheet"
+          :d="d"
+          :edit-mode="editMode"
+          @edit-core="coreEditorOpen = true"
+        />
 
         <!-- ═══ TAB BAR ═══ -->
         <div class="sticky top-0 z-30 mb-4 -mx-3 px-3" style="background: linear-gradient(to bottom, #0a0a0b 85%, transparent)">
           <div class="w-full overflow-x-auto scrollbar-hide pb-1">
-            <div class="flex gap-1 min-w-max bg-zinc-950/90 border border-zinc-800/70 rounded-xl p-1.5 backdrop-blur-sm">
+            <div class="flex gap-1 justify-between min-w-max bg-zinc-950/90 border border-zinc-800/70 rounded-xl p-1.5 backdrop-blur-sm">
               <button
                 v-for="tab in TABS"
                 :key="tab.id"
                 @click="activeTab = tab.id"
-                class="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap"
+                class="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap"
                 :class="activeTab === tab.id
                   ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
                   : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60'"
@@ -8260,6 +9760,7 @@ onMounted(fetchSheet)
             @adjust-resource="adjustResource"
             @reset-resources="resetResources"
             @delete-resource="deleteResource"
+            @toggle-buff="toggleBuff"
           />
 
           <!-- PERÍCIAS -->
@@ -8300,25 +9801,7 @@ onMounted(fetchSheet)
             :on-open-editor="openEditor"
             :on-delete="confirmDelete"
             :on-roll="handleRoll"
-            :on-dual-roll="(label, atkF, dmgF) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
-          />
-
-          <!-- MAGIAS -->
-          <SpellsTab
-            v-else-if="activeTab === 'spells'"
-            :d="d"
-            :edit-mode="editMode"
-            :tabs-edit-mode="tabsEditMode"
-            :spell-slots-max="spellSlotsMax"
-            :spell-slots-used="spellSlotsUsed"
-            :SPELL_LEVELS="SPELL_LEVELS"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
-            :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-roll-item="(spell: any) => handleItemRoll(spell)"
-            :on-adjust-slot="handleAdjustSlot"
-            :on-toggle-edit="toggleTabsEdit"
+            :on-attack-roll="(label: string, atkF: string, dmgF: string) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
           />
 
           <!-- ITENS -->
@@ -8332,26 +9815,21 @@ onMounted(fetchSheet)
             :on-toggle-equipped="toggleEquipped"
           />
 
-          <!-- RECURSOS -->
+          <!-- RECURSOS & BUFFS -->
           <ResourcesTab
             v-else-if="activeTab === 'resources'"
             :sheet="sheet"
+            :d="d"
             :edit-mode="editMode"
+            :mod-str="modStr"
+            :resolve-formula="resolveFormula"
             :on-adjust="adjustResource"
             :on-reset="resetResources"
             :on-add="addResource"
             :on-delete="deleteResource"
-          />
-
-          <!-- BUFFS -->
-          <BuffsTab
-            v-else-if="activeTab === 'buffs'"
-            :d="d"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
             :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-toggle="toggleBuff"
+            :on-delete-buff="(i: number) => confirmDelete('buff', i)"
+            :on-toggle-buff="toggleBuff"
           />
 
           <!-- CONFIG -->
@@ -8378,6 +9856,20 @@ onMounted(fetchSheet)
       :index="editorIndex"
       @save="handleEditorSave"
     />
+
+    <!-- Core Data Editor Modal -->
+    <CoreDataEditorModal
+      v-if="sheet"
+      v-model="coreEditorOpen"
+      :sheet-name="sheet.name"
+      :sheet-class="sheet.class"
+      :sheet-level="sheet.level"
+      :sheet-race="sheet.race"
+      :data="sheet.data"
+      @save="handleCoreSave"
+    />
+
+
 
     <!-- Delete confirm -->
     <Teleport to="body">

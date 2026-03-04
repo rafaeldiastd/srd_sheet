@@ -26,15 +26,15 @@ const hpColor = () => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-5 space-y-5 relative overflow-hidden shadow-lg">
+  <div class="rounded-xl border border-border bg-card/80 p-5 space-y-5 relative overflow-hidden shadow-lg">
     <!-- Decorative background glow -->
     <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 pointer-events-none blur-3xl" :style="{ backgroundColor: hpColor() }"></div>
 
     <!-- Header -->
     <div class="flex items-center justify-between relative z-10">
       <div class="flex items-center gap-2">
-        <Activity class="w-4 h-4 text-zinc-400" />
-        <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Status Vital</span>
+        <Activity class="w-4 h-4 text-muted-foreground" />
+        <span class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status Vital</span>
       </div>
       <div v-if="deathStatus"
         class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border animate-pulse"
@@ -54,24 +54,24 @@ const hpColor = () => {
         <div class="flex-1">
           <div class="flex items-baseline gap-1">
             <input v-model.number="sheet.data.hp_current" @change="onSaveHP" type="number"
-              class="w-16 sm:w-20 text-4xl sm:text-5xl font-black font-serif text-zinc-100 bg-transparent border-b-2 border-transparent hover:border-zinc-700 focus:border-zinc-400 focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors" />
-            <span class="text-2xl text-zinc-600 font-light">/</span>
-            <span class="text-2xl font-bold text-zinc-400">{{ totalHP }}</span>
+              class="w-16 sm:w-20 text-4xl sm:text-5xl font-black font-serif text-foreground bg-transparent border-b-2 border-transparent hover:border-border focus:border-muted-foreground focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors" />
+            <span class="text-2xl text-muted-foreground/40 font-light">/</span>
+            <span class="text-2xl font-bold text-muted-foreground">{{ totalHP }}</span>
           </div>
-          <div class="text-[10px] text-zinc-500 uppercase tracking-wider mt-1 ml-1 font-semibold">Pontos de Vida</div>
+          <div class="text-[10px] text-muted-foreground uppercase tracking-wider mt-1 ml-1 font-semibold">Pontos de Vida</div>
         </div>
 
         <!-- Temp HP -->
-        <div class="bg-zinc-900/80 border border-zinc-800 rounded-xl p-2.5 flex flex-col items-center justify-center min-w-[4.5rem] shadow-inner">
-          <ShieldPlus class="w-4 h-4 text-zinc-500 mb-1" />
+        <div class="bg-muted/80 border border-border rounded-xl p-2.5 flex flex-col items-center justify-center min-w-[4.5rem] shadow-inner">
+          <ShieldPlus class="w-4 h-4 text-muted-foreground mb-1" />
           <input v-model.number="sheet.data.hp_temp" @change="onSaveHP" type="number"
-            class="w-full text-center text-lg font-black text-zinc-200 bg-transparent focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder-zinc-700" placeholder="0" />
-          <div class="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">Temp</div>
+            class="w-full text-center text-lg font-black text-foreground bg-transparent focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder-muted" placeholder="0" />
+          <div class="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Temp</div>
         </div>
       </div>
 
       <!-- HP bar -->
-      <div class="h-4 bg-zinc-900/80 rounded-full overflow-hidden border border-zinc-800 shadow-inner p-0.5">
+      <div class="h-4 bg-muted/80 rounded-full overflow-hidden border border-border shadow-inner p-0.5">
         <div class="h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden"
           :style="{ width: percent() + '%', backgroundColor: hpColor() }">
           <div class="absolute inset-0 bg-white/20 w-full h-full transform -skew-x-12 -translate-x-full"></div>

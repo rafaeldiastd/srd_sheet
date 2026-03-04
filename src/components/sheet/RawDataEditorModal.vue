@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch } from 'vue'
 import { X, AlertTriangle } from 'lucide-vue-next'
 
@@ -44,15 +44,15 @@ function save() {
       <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="close"></div>
       
       <!-- Modal Content -->
-      <div class="relative w-full max-w-4xl bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col h-[90vh]">
+      <div class="relative w-full max-w-4xl bg-card border border-border rounded-2xl shadow-2xl flex flex-col h-[90vh]">
         
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60 bg-zinc-900/40">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-muted/40">
           <div>
-            <h2 class="text-lg font-bold text-zinc-100 font-serif">Editar Ficha (Raw JSON)</h2>
-            <p class="text-xs text-zinc-500">Cuidado ao editar os dados brutos. Certifique-se de usar JSON válido.</p>
+            <h2 class="text-lg font-bold text-foreground font-serif">Editar Ficha (Raw JSON)</h2>
+            <p class="text-xs text-muted-foreground">Cuidado ao editar os dados brutos. Certifique-se de usar JSON válido.</p>
           </div>
-          <button @click="close" class="p-2 -mr-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors">
+          <button @click="close" class="p-2 -mr-2 text-muted-foreground hover:text-foreground/80 hover:bg-accent rounded-lg transition-colors">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -65,14 +65,14 @@ function save() {
           </div>
           <textarea
             v-model="rawText"
-            class="flex-1 w-full bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 text-sm font-mono text-zinc-300 focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
+            class="flex-1 w-full bg-muted/80 border border-border rounded-xl p-4 text-sm font-mono text-foreground/80 focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
             spellcheck="false"
           ></textarea>
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-zinc-800/60 bg-zinc-900/40 flex justify-end gap-3">
-          <button @click="close" class="px-5 py-2.5 rounded-lg border border-zinc-700 text-sm font-semibold text-zinc-300 hover:bg-zinc-800 transition-colors">
+        <div class="px-6 py-4 border-t border-border/60 bg-muted/40 flex justify-end gap-3">
+          <button @click="close" class="px-5 py-2.5 rounded-lg border border-border text-sm font-semibold text-foreground/80 hover:bg-accent transition-colors">
             Cancelar
           </button>
           <button @click="save" class="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors">

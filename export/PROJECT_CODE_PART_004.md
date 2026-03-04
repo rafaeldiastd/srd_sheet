@@ -1,6 +1,1539 @@
 
 
 ---
+## FILE: src/data/dnd35.ts
+```typescript
+export const SKILLS_DATA = [
+    { name: 'Acrobacia', ability: 'dex', trainedOnly: true },
+    { name: 'Adestrar Animais', ability: 'cha', trainedOnly: true },
+    { name: 'Arte da Fuga', ability: 'dex', trainedOnly: false },
+    { name: 'Atuação', ability: 'cha', trainedOnly: false },
+    { name: 'Avaliação', ability: 'int', trainedOnly: false },
+    { name: 'Blefar', ability: 'cha', trainedOnly: false },
+    { name: 'Cavalgar', ability: 'dex', trainedOnly: false },
+    { name: 'Concentração', ability: 'con', trainedOnly: false },
+    { name: 'Conhecimento (Arcano)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Arquitetura e Engenharia)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Dungeons)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Geografia)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (História)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Local)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Natureza)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Nobreza e Realeza)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Os Planos)', ability: 'int', trainedOnly: true },
+    { name: 'Conhecimento (Religião)', ability: 'int', trainedOnly: true },
+    { name: 'Cura', ability: 'wis', trainedOnly: false },
+    { name: 'Decifrar Escrita', ability: 'int', trainedOnly: true },
+    { name: 'Disfarces', ability: 'cha', trainedOnly: false },
+    { name: 'Diplomacia', ability: 'cha', trainedOnly: false },
+    { name: 'Equilíbrio', ability: 'dex', trainedOnly: false },
+    { name: 'Escalar', ability: 'str', trainedOnly: false },
+    { name: 'Esconder-se', ability: 'dex', trainedOnly: false },
+    { name: 'Falsificação', ability: 'int', trainedOnly: false },
+    { name: 'Furtividade', ability: 'dex', trainedOnly: false },
+    { name: 'Identificar Magia', ability: 'int', trainedOnly: true },
+    { name: 'Intimidação', ability: 'cha', trainedOnly: false },
+    { name: 'Natação', ability: 'str', trainedOnly: false },
+    { name: 'Obter Informação', ability: 'cha', trainedOnly: false },
+    { name: 'Observar', ability: 'wis', trainedOnly: false },
+    { name: 'Ofícios', ability: 'int', trainedOnly: false },
+    { name: 'Operar Mecanismo', ability: 'int', trainedOnly: true },
+    { name: 'Ouvir', ability: 'wis', trainedOnly: false },
+    { name: 'Prestidigitação', ability: 'dex', trainedOnly: true },
+    { name: 'Procurar', ability: 'int', trainedOnly: false },
+    { name: 'Profissão', ability: 'wis', trainedOnly: true },
+    { name: 'Saltar', ability: 'str', trainedOnly: false },
+    { name: 'Sentir Motivação', ability: 'wis', trainedOnly: false },
+    { name: 'Sobrevivência', ability: 'wis', trainedOnly: false },
+    { name: 'Usar Cordas', ability: 'dex', trainedOnly: false },
+    { name: 'Usar Instrumento Mágico', ability: 'cha', trainedOnly: true },
+]
+
+export const CLASS_SKILLS: Record<string, string[]> = {
+    'Bárbaro': ['Escalar', 'Ofícios', 'Adestrar Animais', 'Intimidação', 'Saltar', 'Ouvir', 'Cavalgar', 'Sobrevivência', 'Natação'],
+    'Bardo': ['Avaliação', 'Equilíbrio', 'Blefar', 'Escalar', 'Concentração', 'Ofícios', 'Decifrar Escrita', 'Diplomacia', 'Disfarces', 'Arte da Fuga', 'Obter Informação', 'Esconder-se', 'Saltar', 'Conhecimento (Arcano)', 'Ouvir', 'Furtividade', 'Atuação', 'Profissão', 'Sentir Motivação', 'Prestidigitação', 'Identificar Magia', 'Natação', 'Acrobacia', 'Usar Instrumento Mágico'],
+    'Clérigo': ['Concentração', 'Ofícios', 'Diplomacia', 'Cura', 'Conhecimento (Arcano)', 'Conhecimento (Religião)', 'Profissão', 'Identificar Magia'],
+    'Druida': ['Concentração', 'Ofícios', 'Diplomacia', 'Adestrar Animais', 'Cura', 'Conhecimento (Natureza)', 'Ouvir', 'Profissão', 'Cavalgar', 'Identificar Magia', 'Observar', 'Sobrevivência', 'Natação'],
+    'Guerreiro': ['Escalar', 'Ofícios', 'Adestrar Animais', 'Intimidação', 'Saltar', 'Cavalgar', 'Natação'],
+    'Monge': ['Equilíbrio', 'Escalar', 'Concentração', 'Ofícios', 'Diplomacia', 'Arte da Fuga', 'Esconder-se', 'Saltar', 'Conhecimento (Arcano)', 'Conhecimento (Religião)', 'Ouvir', 'Furtividade', 'Atuação', 'Profissão', 'Sentir Motivação', 'Observar', 'Natação', 'Acrobacia'],
+    'Paladino': ['Concentração', 'Ofícios', 'Diplomacia', 'Adestrar Animais', 'Cura', 'Conhecimento (Religião)', 'Profissão', 'Cavalgar', 'Sentir Motivação'],
+    'Ranger': ['Escalar', 'Concentração', 'Ofícios', 'Adestrar Animais', 'Cura', 'Esconder-se', 'Saltar', 'Conhecimento (Dungeons)', 'Conhecimento (Geografia)', 'Conhecimento (Natureza)', 'Ouvir', 'Furtividade', 'Profissão', 'Cavalgar', 'Procurar', 'Observar', 'Sobrevivência', 'Natação', 'Usar Cordas'],
+    'Ladino': ['Avaliação', 'Equilíbrio', 'Blefar', 'Escalar', 'Ofícios', 'Decifrar Escrita', 'Diplomacia', 'Operar Mecanismo', 'Disfarces', 'Arte da Fuga', 'Falsificação', 'Obter Informação', 'Esconder-se', 'Intimidação', 'Saltar', 'Ouvir', 'Furtividade', 'Abrir Fechaduras', 'Atuação', 'Profissão', 'Procurar', 'Sentir Motivação', 'Prestidigitação', 'Observar', 'Natação', 'Acrobacia', 'Usar Instrumento Mágico', 'Usar Cordas'],
+    'Feiticeiro': ['Blefar', 'Concentração', 'Ofícios', 'Conhecimento (Arcano)', 'Profissão', 'Identificar Magia'],
+    'Mago': ['Concentração', 'Ofícios', 'Decifrar Escrita', 'Conhecimento (Arcano)', 'Conhecimento (Arquitetura e Engenharia)', 'Conhecimento (Dungeons)', 'Conhecimento (Geografia)', 'Conhecimento (História)', 'Conhecimento (Local)', 'Conhecimento (Natureza)', 'Conhecimento (Nobreza e Realeza)', 'Conhecimento (Religião)', 'Conhecimento (Os Planos)', 'Profissão', 'Identificar Magia'],
+    'Bruxo': ['Blefar', 'Concentração', 'Ofícios', 'Disfarces', 'Intimidação', 'Saltar', 'Conhecimento (Arcano)', 'Conhecimento (Os Planos)', 'Conhecimento (Religião)', 'Profissão', 'Sentir Motivação', 'Identificar Magia', 'Usar Instrumento Mágico'],
+    'Assassino': ['Acrobacia', 'Arte da Fuga', 'Blefar', 'Decifrar Escrita', 'Diplomacia', 'Disfarces', 'Equilíbrio', 'Esconder-se', 'Falsificação', 'Furtividade', 'Intimidação', 'Observar', 'Obter Informação', 'Ouvir', 'Prestidigitação', 'Procurar', 'Sentir Motivação', 'Usar Cordas', 'Usar Instrumento Mágico'],
+    'Algoz': ['Adestrar Animais', 'Cavalgar', 'Concentração', 'Conhecimento (Religião)', 'Cura', 'Diplomacia', 'Esconder-se', 'Intimidação', 'Ofícios', 'Profissão'],
+    'Defensor Anão': ['Adestrar Animais', 'Avaliação', 'Cavalgar', 'Ouvir', 'Sentir Motivação', 'Sobrevivência'],
+    'Dançarino das Sombras': ['Acrobacia', 'Arte da Fuga', 'Atuação', 'Blefar', 'Decifrar Escrita', 'Diplomacia', 'Disfarces', 'Equilíbrio', 'Esconder-se', 'Furtividade', 'Observar', 'Ouvir', 'Prestidigitação', 'Procurar', 'Saltar', 'Usar Cordas'],
+    'Mestre do Conhecimento': ['Concentração', 'Conhecimento (Todos)', 'Avaliação', 'Cura', 'Decifrar Escrita', 'Falsificação', 'Identificar Magia', 'Prestidigitação'],
+    'Teurgo Místico': ['Concentração', 'Conhecimento (Arcano)', 'Conhecimento (Religião)', 'Decifrar Escrita', 'Identificar Magia']
+}
+
+export const CLASS_SKILL_POINTS: Record<string, number> = {
+    'Bárbaro': 4,
+    'Bardo': 6,
+    'Clérigo': 2,
+    'Druida': 4,
+    'Guerreiro': 2,
+    'Monge': 4,
+    'Paladino': 2,
+    'Ranger': 6,
+    'Ladino': 8,
+    'Feiticeiro': 2,
+    'Mago': 2,
+    'Bruxo': 2,
+    'Assassino': 4,
+    'Algoz': 2,
+    'Defensor Anão': 2,
+    'Dançarino das Sombras': 6,
+    'Mestre do Conhecimento': 4,
+    'Teurgo Místico': 2
+}
+
+export const CLASS_HIT_DICE: Record<string, number> = {
+    'Bárbaro': 12,
+    'Bardo': 6,
+    'Clérigo': 8,
+    'Druida': 8,
+    'Guerreiro': 10,
+    'Monge': 8,
+    'Paladino': 10,
+    'Ranger': 8,
+    'Ladino': 6,
+    'Feiticeiro': 4,
+    'Mago': 4,
+    'Bruxo': 6,
+    'Assassino': 6,
+    'Algoz': 10,
+    'Defensor Anão': 12,
+    'Dançarino das Sombras': 8,
+    'Mestre do Conhecimento': 4,
+    'Teurgo Místico': 4
+}
+
+export interface Feat {
+    name: string
+    description: string
+    prerequisite?: string
+}
+
+export const FEATS_DATA: Feat[] = [
+    { name: 'Acrobático', description: '+2 de bônus em testes de Acrobacia e Saltar.', prerequisite: '' },
+    { name: 'Ágil', description: '+2 de bônus em testes de Equilíbrio e Arte da Fuga.', prerequisite: '' },
+    { name: 'Prontidão', description: '+2 de bônus em testes de Ouvir e Observar.' },
+    { name: 'Afinidade com Animais', description: '+2 de bônus em testes de Adestrar Animais e Cavalgar.' },
+    { name: 'Usar Armadura (Leve)', description: 'Sem penalidade de armadura em jogadas de ataque.' },
+    { name: 'Usar Armadura (Média)', description: 'Sem penalidade de armadura em jogadas de ataque.' },
+    { name: 'Usar Armadura (Pesada)', description: 'Sem penalidade de armadura em jogadas de ataque.' },
+    { name: 'Atlético', description: '+2 de bônus em testes de Escalar e Natação.' },
+    { name: 'Lutar às Cegas', description: 'Jogue novamente chance de erro por camuflagem.' },
+    { name: 'Magia em Combate', description: '+4 de bônus em testes de Concentração para conjurar defensivamente.' },
+    { name: 'Especialização em Combate', description: 'Troque bônus de ataque por bônus na CA.' },
+    { name: 'Reflexos de Combate', description: 'Ataques de oportunidade adicionais.' },
+    { name: 'Dissimulado', description: '+2 de bônus em testes de Disfarces e Falsificação.' },
+    { name: 'Mãos Rápidas', description: '+2 de bônus em testes de Prestidigitação e Usar Cordas.' },
+    { name: 'Diligente', description: '+2 de bônus em testes de Avaliação e Decifrar Escrita.' },
+    { name: 'Esquiva', description: '+1 de bônus de esquiva na CA contra um alvo selecionado.' },
+    { name: 'Tolerância', description: '+4 de bônus em testes para resistir a dano não letal.' },
+    { name: 'Grande Fortitude', description: '+2 de bônus em testes de Fortitude.' },
+    { name: 'Iniciativa Aprimorada', description: '+4 de bônus em testes de iniciativa.' },
+    { name: 'Ataque Desarmado Aprimorado', description: 'Considerado armado mesmo desarmado.' },
+    { name: 'Investigador', description: '+2 de bônus em testes de Obter Informação e Procurar.' },
+    { name: 'Vontade de Ferro', description: '+2 de bônus em testes de Vontade.' },
+    { name: 'Reflexos Rápidos', description: '+2 de bônus em testes de Reflexos.' },
+    { name: 'Aptidão Mágica', description: '+2 de bônus em testes de Identificar Magia e Usar Instrumento Mágico.' },
+    { name: 'Negociador', description: '+2 de bônus em testes de Diplomacia e Sentir Motivação.' },
+    { name: 'Dedos Ágeis', description: '+2 de bônus em testes de Operar Mecanismo e Abrir Fechaduras.' },
+    { name: 'Persuasivo', description: '+2 de bônus em testes de Blefar e Intimidação.' },
+    { name: 'Tiro Certeiro', description: '+1 de bônus em ataque e dano até 9m (30 pés).' },
+    { name: 'Ataque Poderoso', description: 'Troque bônus de ataque por bônus de dano.' },
+    { name: 'Tiro Preciso', description: 'Sem penalidade por atirar em combate corpo a corpo.' },
+    { name: 'Saque Rápido', description: 'Sacar arma como ação livre.' },
+    { name: 'Recarga Rápida', description: 'Recarregar besta mais rapidamente.' },
+    { name: 'Correr', description: 'Correr 5x o deslocamento, +4 em Saltar com corrida.' },
+    { name: 'Autossuficiente', description: '+2 de bônus em testes de Cura e Sobrevivência.' },
+    { name: 'Foco em Perícia', description: '+3 de bônus em testes da perícia selecionada.' },
+    { name: 'Sorrateiro', description: '+2 de bônus em testes de Esconder-se e Furtividade.' },
+    { name: 'Vitalidade', description: '+3 pontos de vida.' },
+    { name: 'Rastrear', description: 'Usar perícia Sobrevivência para rastrear.' },
+    { name: 'Combater com Duas Armas', description: 'Reduz penalidades por lutar com duas armas.' },
+    { name: 'Acuidade com Arma', description: 'Usar mod. de Des em vez de For nas jogadas de ataque com armas leves.' },
+    { name: 'Foco em Arma', description: '+1 de bônus nas jogadas de ataque com a arma selecionada.' },
+]
+
+```
+
+
+---
+## FILE: src/data/sheetConstants.ts
+```typescript
+export const ATTR_KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const
+export const ATTR_LABELS: Record<string, string> = { str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR' }
+
+export interface FieldDef { field: string; label: string }
+
+export const MODIFIER_TARGETS = [
+    { value: 'str', label: 'Força (@str)' },
+    { value: 'dex', label: 'Destreza (@dex)' },
+    { value: 'con', label: 'Constituição (@con)' },
+    { value: 'int', label: 'Inteligência (@int)' },
+    { value: 'wis', label: 'Sabedoria (@wis)' },
+    { value: 'cha', label: 'Carisma (@cha)' },
+    { value: 'CA', label: 'Classe de Armadura (@CA)' },
+    { value: 'hp', label: 'Pontos de Vida (@hp)' },
+    { value: 'bab', label: 'Bônus Base Ataque (@BBA)' },
+    { value: 'fort', label: 'Fortitude (@fort)' },
+    { value: 'ref', label: 'Reflexos (@ref)' },
+    { value: 'will', label: 'Vontade (@will)' },
+    { value: 'iniciativa', label: 'Iniciativa (@iniciativa)' },
+    { value: 'speed', label: 'Deslocamento (@speed)' },
+    { value: 'toque', label: 'CA de Toque' },
+    { value: 'surpreso', label: 'CA Surpreso' },
+    { value: 'melee', label: 'Ataque Corpo-a-Corpo' },
+    { value: 'ranged', label: 'Ataque à Distância' },
+    { value: 'grapple', label: 'Agarrar' },
+]
+
+export const CA_FIELDS: FieldDef[] = [
+    { field: 'ca_armor', label: 'Armadura' },
+    { field: 'ca_shield', label: 'Escudo' },
+    { field: 'ca_natural', label: 'Natural' },
+    { field: 'ca_deflect', label: 'Deflexão' },
+]
+
+export const SAVE_FIELDS: FieldDef[] = [
+    { field: 'save_fort', label: 'Fortitude base' },
+    { field: 'save_ref', label: 'Reflexo base' },
+    { field: 'save_will', label: 'Vontade base' },
+]
+
+export const SAVE_BONUS_FIELDS: FieldDef[] = [
+    { field: 'fort', label: 'Bônus Fort.' },
+    { field: 'ref', label: 'Bônus Ref.' },
+    { field: 'will', label: 'Bônus Von.' },
+]
+
+export const ELEM_FIELDS: FieldDef[] = [
+    { field: 'fire', label: 'Fogo' },
+    { field: 'cold', label: 'Frio' },
+    { field: 'acid', label: 'Ácido' },
+    { field: 'electricity', label: 'Eletric.' },
+    { field: 'sonic', label: 'Sônico' },
+    { field: 'force', label: 'Força' },
+]
+
+export const races = ['Personalizada', 'Humano', 'Anão', 'Elfo', 'Gnomo', 'Meio-Elfo', 'Meio-Orc', 'Halfling']
+export const classes = ['Personalizada', 'Bárbaro', 'Bardo', 'Clérigo', 'Druida', 'Guerreiro', 'Monge', 'Paladino', 'Ranger', 'Ladino', 'Feiticeiro', 'Mago', 'Bruxo', 'Assassino', 'Algoz', 'Defensor Anão', 'Dançarino das Sombras', 'Mestre do Conhecimento', 'Teurgo Místico']
+export const alignments = ['Leal e Bom', 'Neutro e Bom', 'Caótico e Bom', 'Leal e Neutro', 'Neutro', 'Caótico e Neutro', 'Leal e Mau', 'Neutro e Mau', 'Caótico e Mau']
+
+```
+
+
+---
+## FILE: src/lib/sheetDefaults.ts
+```typescript
+import type { BonusData, SheetData } from '@/types/sheet'
+
+export function defaultBonuses(): BonusData {
+    return {
+        attributes: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+        hp: 0,
+        ca: 0,
+        bab: 0,
+        initiative: 0,
+        speed: 0,
+        saves: { fort: 0, ref: 0, will: 0 },
+        resistances: { fire: 0, cold: 0, acid: 0, electricity: 0, sonic: 0, force: 0 },
+        notes: '',
+    }
+}
+
+export function defaultSheetData(): Partial<SheetData> {
+    return {
+        bonuses: defaultBonuses(),
+        feats: [],
+        equipment: [],
+        shortcuts: [],
+        buffs: [],
+        resources: [],
+        skills: {},
+        attributes: {
+            str: { base: 10, temp: 0 },
+            dex: { base: 10, temp: 0 },
+            con: { base: 10, temp: 0 },
+            int: { base: 10, temp: 0 },
+            wis: { base: 10, temp: 0 },
+            cha: { base: 10, temp: 0 },
+        },
+        hp_current: 10,
+        hp_max: 10,
+        level: 1,
+        xp: 0,
+    }
+}
+
+```
+
+
+---
+## FILE: src/lib/supabase.ts
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+```
+
+
+---
+## FILE: src/lib/useCampaignRolls.ts
+```typescript
+import { ref, type Ref } from 'vue'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
+import { DiceRoller } from '@dice-roller/rpg-dice-roller'
+
+export function useCampaignRolls(
+    campaignId: string,
+    memberName: Ref<string>,
+    recipientId: Ref<string>,
+    avatarUrl?: Ref<string | null>
+) {
+    const authStore = useAuthStore()
+    const roller = new DiceRoller()
+    const rolling = ref(false)
+
+    function evaluateFormula(formula: string): { label: string; result: number; breakdown: string } {
+        try {
+            const rollResult = roller.roll(formula)
+            const roll = Array.isArray(rollResult) ? rollResult[0] : rollResult
+            if (!roll) throw new Error('Falha na rolagem')
+            return {
+                label: formula,
+                result: roll.total,
+                breakdown: roll.output.split(': ')[1] || roll.output
+            }
+        } catch (e) {
+            console.error('Roll error:', e)
+            return { label: formula, result: 0, breakdown: 'Erro na fórmula' }
+        }
+    }
+
+    function modStr(n: number): string {
+        return n >= 0 ? `+${n}` : `${n}`
+    }
+
+    async function sendRoll(label: string, displayFormula: string, evalFormula?: string) {
+        if (rolling.value) return
+        rolling.value = true
+
+        const formulaToEvaluate = evalFormula || displayFormula
+        const { result, breakdown } = evaluateFormula(formulaToEvaluate)
+
+        const isWhisper = recipientId.value !== 'all'
+
+        const payload: any = {
+            label,
+            formula: displayFormula,
+            result,
+            breakdown
+        }
+
+        if (isWhisper) {
+            payload.is_roll = true
+            payload.target_id = recipientId.value
+        }
+
+        const content = JSON.stringify(payload)
+
+        const { error } = await supabase.from('messages').insert({
+            campaign_id: campaignId,
+            user_id: authStore.user?.id ?? null,
+            sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
+            content,
+            type: isWhisper ? 'whisper' : 'roll',
+        })
+
+        if (error) console.error('Error sending roll:', error)
+
+        rolling.value = false
+    }
+
+    async function sendAttackRoll(
+        label: string,
+        attackFormula: string,
+        damageFormula: string
+    ): Promise<string | null> {
+        if (rolling.value) return null
+        rolling.value = true
+
+        const isWhisper = recipientId.value !== 'all'
+        const attackResult = evaluateFormula(attackFormula)
+
+        const payload: any = {
+            label,
+            is_attack: true,
+            is_roll: true, // for backward compatibility or whisper chat filter detection
+            attack: {
+                formula: attackFormula,
+                result: attackResult.result,
+                breakdown: attackResult.breakdown
+            },
+            damage: null,
+            damage_formula: damageFormula,
+            damage_pending: true
+        }
+
+        if (isWhisper) {
+            payload.target_id = recipientId.value
+        }
+
+        const content = JSON.stringify(payload)
+
+        const { data, error } = await supabase.from('messages').insert({
+            campaign_id: campaignId,
+            user_id: authStore.user?.id ?? null,
+            sender_name: memberName.value,
+            character_name: memberName.value,
+            avatar_url: avatarUrl?.value || null,
+            content,
+            type: isWhisper ? 'whisper' : 'roll',
+        }).select('id').single()
+
+        if (error) console.error('Error sending attack roll:', error)
+
+        rolling.value = false
+        return data?.id || null
+    }
+
+    async function rollDamage(messageId: string, damageFormula: string): Promise<void> {
+        if (rolling.value) return
+        rolling.value = true
+
+        const { data: msgToUpdate, error: fetchError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('id', messageId)
+            .single()
+
+        if (fetchError || !msgToUpdate) {
+            console.error('Could not find message to update', fetchError)
+            rolling.value = false
+            return
+        }
+
+        let parsedContent
+        try {
+            parsedContent = JSON.parse(msgToUpdate.content)
+        } catch {
+            rolling.value = false
+            return
+        }
+
+        const damageResult = evaluateFormula(damageFormula)
+
+        const payload = {
+            ...parsedContent,
+            damage: {
+                formula: damageFormula,
+                result: damageResult.result,
+                breakdown: damageResult.breakdown
+            },
+            damage_pending: false
+        }
+
+        const { error } = await supabase.from('messages').update({
+            content: JSON.stringify(payload)
+        }).eq('id', messageId)
+
+        if (error) console.error('Error updating damage roll:', error)
+        rolling.value = false
+    }
+
+    async function deleteMessage(messageId: string): Promise<boolean> {
+        const { error } = await supabase.from('messages').delete().eq('id', messageId)
+        if (error) {
+            console.error('Error deleting message:', error)
+            return false
+        }
+        return true
+    }
+
+    return {
+        rolling,
+        sendRoll,
+        sendAttackRoll,
+        rollDamage,
+        evaluateFormula,
+        deleteMessage,
+        modStr
+    }
+}
+
+```
+
+
+---
+## FILE: src/lib/utils.ts
+```typescript
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+    return twMerge(clsx(inputs))
+}
+
+```
+
+
+---
+## FILE: src/main.ts
+```typescript
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import router from './router'
+import App from './App.vue'
+import './style.css'
+
+const app = createApp(App)
+
+app.use(createPinia())
+app.use(router)
+
+app.mount('#app')
+
+```
+
+
+---
+## FILE: src/router/index.ts
+```typescript
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const router = createRouter({
+    history: createWebHistory(import.meta.env.BASE_URL),
+    routes: [
+        {
+            path: '/',
+            redirect: '/login'
+        },
+        {
+            path: '/login',
+            name: 'login',
+            component: () => import('../views/LoginView.vue')
+        },
+        {
+            path: '/register',
+            redirect: '/login'
+        },
+        {
+            path: '/dashboard',
+            name: 'dashboard',
+            component: () => import('../views/DashboardView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/create',
+            name: 'create',
+            component: () => import('../views/CreateSheetView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/sheet/:id',
+            name: 'sheet',
+            component: () => import('../views/SheetView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/campaign/:id',
+            name: 'campaign',
+            component: () => import('../views/CampaignView.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/design',
+            name: 'design',
+            component: () => import('../views/DesignSystemView.vue')
+        }
+    ]
+})
+
+router.beforeEach(async (to, _from) => {
+    const authStore = useAuthStore()
+
+    // Ensure auth state is initialized
+    if (authStore.loading) {
+        await authStore.initialize()
+    }
+
+    const isAuthenticated = !!authStore.user
+
+    if (to.meta.requiresAuth && !isAuthenticated) {
+        return '/login'
+    } else if (to.name === 'login' && isAuthenticated) {
+        return '/dashboard'
+    }
+})
+
+export default router
+
+```
+
+
+---
+## FILE: src/stores/auth.ts
+```typescript
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { supabase } from '@/lib/supabase'
+import type { User, Session } from '@supabase/supabase-js'
+import { useRouter } from 'vue-router'
+
+export const useAuthStore = defineStore('auth', () => {
+    const user = ref<User | null>(null)
+    const session = ref<Session | null>(null)
+    const loading = ref(true)
+    const router = useRouter()
+
+    async function initialize() {
+        loading.value = true
+        const { data } = await supabase.auth.getSession()
+        session.value = data.session
+        user.value = data.session?.user ?? null
+
+        supabase.auth.onAuthStateChange((_event, _session) => {
+            session.value = _session
+            user.value = _session?.user ?? null
+            if (!_session) {
+                // Handle logout or session expiry if needed
+            }
+        })
+        loading.value = false
+    }
+
+    async function signOut() {
+        await supabase.auth.signOut()
+        user.value = null
+        session.value = null
+        router.push('/')
+    }
+
+    return {
+        user,
+        session,
+        loading,
+        initialize,
+        signOut
+    }
+})
+
+```
+
+
+---
+## FILE: src/stores/wizardStore.ts
+```typescript
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+export interface Attribute {
+    base: number
+    temp: number
+}
+
+export interface CharacterAttributes {
+    str: Attribute
+    dex: Attribute
+    con: Attribute
+    int: Attribute
+    wis: Attribute
+    cha: Attribute
+}
+
+export const useWizardStore = defineStore('wizard', () => {
+    const currentStep = ref(1)
+    const totalSteps = 5
+
+    const character = ref({
+        sheetType: 'Personagem',
+        name: '',
+        race: '',
+        class: '',
+        customHitDie: 8,
+        customSkillPoints: 2,
+        level: 1,
+        avatar_url: '',
+        attributes: {
+            str: { base: 10, temp: 0 },
+            dex: { base: 10, temp: 0 },
+            con: { base: 10, temp: 0 },
+            int: { base: 10, temp: 0 },
+            wis: { base: 10, temp: 0 },
+            cha: { base: 10, temp: 0 },
+        } as CharacterAttributes,
+        skills: {} as Record<string, number>,
+        skillPoints: 0,
+        feats: [] as string[],
+        equipment: [] as string[],
+        bio: '',
+        alignment: '',
+        deity: '',
+        size: 'Médio',
+        hp_max: 0,
+        bab: 0,
+        speed: 9,
+        save_fort: 0,
+        save_ref: 0,
+        save_will: 0,
+        ca_armor: 0,
+        ca_shield: 0,
+        ca_natural: 0,
+        ca_deflect: 0,
+        initiative_misc: 0,
+        age: '',
+        gender: '',
+        height: '',
+        weight: '',
+        eyes: '',
+        hair: '',
+        skin: '',
+    })
+
+    function nextStep() {
+        if (currentStep.value < totalSteps) {
+            currentStep.value++
+        }
+    }
+
+    function prevStep() {
+        if (currentStep.value > 1) {
+            currentStep.value--
+        }
+    }
+
+    function setStep(step: number) {
+        if (step >= 1 && step <= totalSteps) {
+            currentStep.value = step
+        }
+    }
+
+    return {
+        currentStep,
+        totalSteps,
+        character,
+        nextStep,
+        prevStep,
+        setStep
+    }
+})
+
+```
+
+
+---
+## FILE: src/style.css
+```css
+@import "tailwindcss";
+
+/* =====================================================
+   TAILWIND V4 THEME — Lumina Dark (Zinc + Gold)
+   In v4, colors are defined here via @theme, NOT in
+   tailwind.config.js. The JS config is ignored for colors.
+   ===================================================== */
+
+@theme {
+  /* Fonts */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Merriweather", ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+
+  /* Border Radius */
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Lumina Color Palette — Raw Values */
+  --color-zinc-950: #09090b;
+  --color-zinc-900: #18181b;
+  --color-zinc-800: #27272a;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-600: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-100: #f4f4f5;
+  --color-gold: #dfd4bd;
+  --color-gold-dark: #c9be9e;
+
+  /* Semantic Color Tokens mapped to Lumina palette */
+  --color-background: var(--color-zinc-950);
+  --color-foreground: var(--color-zinc-200);
+
+  --color-card: var(--color-zinc-900);
+  --color-card-foreground: var(--color-zinc-200);
+
+  --color-popover: var(--color-zinc-900);
+  --color-popover-foreground: var(--color-zinc-200);
+
+  --color-primary: var(--color-gold);
+  --color-primary-foreground: var(--color-zinc-950);
+
+  --color-secondary: var(--color-zinc-800);
+  --color-secondary-foreground: var(--color-zinc-200);
+
+  --color-muted: var(--color-zinc-800);
+  --color-muted-foreground: var(--color-zinc-500);
+
+  --color-accent: var(--color-gold);
+  --color-accent-foreground: var(--color-zinc-950);
+
+  --color-destructive: #7f1d1d;
+  --color-destructive-foreground: var(--color-zinc-100);
+
+  --color-border: var(--color-zinc-800);
+  --color-input: var(--color-zinc-800);
+  --color-ring: var(--color-gold);
+}
+
+/* Base styles */
+@layer base {
+  * {
+    border-color: var(--color-border);
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-serif);
+  }
+
+  /* Custom Scrollbar Styles */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-zinc-800);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-zinc-700);
+  }
+}
+```
+
+
+---
+## FILE: src/types/sheet.ts
+```typescript
+export interface Modifier {
+    target: string
+    value: number
+}
+
+export interface Attribute {
+    base: number
+    temp: number
+}
+
+export interface Attributes {
+    str: Attribute
+    dex: Attribute
+    con: Attribute
+    int: Attribute
+    wis: Attribute
+    cha: Attribute
+    [key: string]: Attribute
+}
+
+export interface SkillItem {
+    name: string
+    ranks: number
+    ability: string
+}
+
+export interface BonusData {
+    attributes: Record<string, number>
+    hp: number
+    ca: number
+    bab: number
+    initiative: number
+    speed: number
+    saves: {
+        fort: number
+        ref: number
+        will: number
+    }
+    resistances: {
+        fire: number
+        cold: number
+        acid: number
+        electricity: number
+        sonic: number
+        force: number
+    }
+    notes: string
+}
+
+export interface Feat {
+    title: string
+    description: string
+    isAttack?: boolean
+    modifiers?: Modifier[]
+}
+
+export interface Equipment {
+    title: string
+    description: string
+    equipped?: boolean
+    weight?: number
+    modifiers?: Modifier[]
+}
+
+export interface Shortcut {
+    label?: string
+    title?: string
+    formula?: string
+    rollFormula?: string
+    attackFormula?: string
+    attackBonus?: number | string
+    isAttack?: boolean
+    icon?: string
+    modifiers?: Modifier[]
+}
+
+export interface Buff {
+    title: string
+    description: string
+    active: boolean
+    modifiers?: Modifier[]
+}
+
+export interface Resource {
+    label?: string
+    name?: string
+    current: number
+    max: number
+}
+
+export interface SheetData {
+    hp_current: number
+    hp_max: number
+    xp: number
+    level: number
+    race: string
+    class: string
+    size: string
+    sheetType: string
+    attributes: Attributes
+    bonuses: BonusData
+    skills: Record<string, number>
+    feats: Feat[]
+    equipment: Equipment[]
+    shortcuts: Shortcut[]
+    buffs: Buff[]
+    resources: Resource[]
+    layout?: string[]
+    resumeLayout?: string[]
+    hiddenBlocks?: string[]
+    ca_armor?: number
+    ca_shield?: number
+    ca_natural?: number
+    ca_deflect?: number
+    save_fort?: number
+    save_ref?: number
+    save_will?: number
+    initiative_misc?: number
+    speed?: number
+    customSkillPoints?: number
+    customHitDie?: number
+    skillPoints?: number
+    [key: string]: any
+}
+
+export interface Sheet {
+    id: string
+    name: string
+    class: string
+    level: number
+    race: string
+    data: SheetData
+    user_id?: string
+    created_at?: string
+}
+
+```
+
+
+---
+## FILE: src/views/CampaignView.vue
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
+import { Copy, BookOpen, Scroll, FileText, LayoutTemplate, MessageSquare, LogOut } from 'lucide-vue-next'
+import ChatSidebar from '@/components/campaign/ChatSidebar.vue'
+import QuickNpcModal from '@/components/campaign/QuickNpcModal.vue'
+import SheetView from '@/views/SheetView.vue'
+import { useCampaignRolls } from '@/lib/useCampaignRolls'
+import SheetSelectorModal from '@/components/campaign/SheetSelectorModal.vue'
+import NotepadPanel from '@/components/campaign/notepad/NotepadPanel.vue'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const campaignId = route.params.id as string
+const campaign = ref<any>(null)
+const members = ref<any[]>([])
+const loading = ref(true)
+const isDM = ref(false)
+const showNpcModal = ref(false)
+const showSheetSelector = ref(false)
+
+// UI state
+const showChat = ref(true)
+const showNotes = ref(false)
+
+// Sheet selector state
+const mySheets = ref<any[]>([])
+const selectedSheetId = ref<string>('none')
+const myMemberId = ref<string>('')
+const savingSheet = ref(false)
+const sheetSaved = ref(false)
+
+const myCurrentSheetId = computed(() => {
+    return selectedSheetId.value === 'none' ? null : selectedSheetId.value
+})
+
+const myMemberName = computed(() => {
+    if (isDM.value) return 'Mestre'
+    const activeSheet = mySheets.value.find(s => s.id === selectedSheetId.value)
+    if (activeSheet) return activeSheet.name
+    return authStore.user?.user_metadata?.name || 'Jogador'
+})
+
+const myAvatarUrl = computed(() => {
+    if (isDM.value) return null
+    const activeSheet = mySheets.value.find(s => s.id === selectedSheetId.value)
+    if (!activeSheet?.data) return null
+    const data = typeof activeSheet.data === 'string' 
+      ? JSON.parse(activeSheet.data) 
+      : activeSheet.data
+    return data.avatar_url || null
+})
+
+const recipientId = ref('all')
+
+const { sendRoll, sendAttackRoll } = useCampaignRolls(campaignId, myMemberName, recipientId, myAvatarUrl)
+
+async function fetchCampaign() {
+    loading.value = true
+
+    const { data: campaignData, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('id', campaignId)
+        .single()
+
+    if (campaignError) {
+        console.error('Error fetching campaign:', campaignError)
+        router.push('/dashboard')
+        return
+    }
+    campaign.value = campaignData
+    isDM.value = campaignData.dm_id === authStore.user?.id
+
+    const { data: memberData } = await supabase
+        .from('campaign_members')
+        .select('*, sheets (id, name, class, level, data)')
+        .eq('campaign_id', campaignId)
+
+    if (memberData) {
+        members.value = memberData
+        const me = memberData.find((m: any) => m.user_id === authStore.user?.id)
+        if (me) {
+            myMemberId.value = me.id
+            
+            // Priority: LocalStorage > Database > 'none'
+            const lastSheetId = localStorage.getItem(`last_sheet_${campaignId}_${authStore.user?.id}`)
+            const dbSheetId = me.sheet_id
+            
+            if (lastSheetId && lastSheetId !== 'none') {
+                selectedSheetId.value = lastSheetId
+            } else if (dbSheetId) {
+                selectedSheetId.value = dbSheetId
+                // Keep localstorage synced
+                localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, dbSheetId)
+            } else {
+                selectedSheetId.value = 'none'
+            }
+        }
+    }
+
+    loading.value = false
+}
+
+async function fetchMySheets() {
+    // Busca as fichas atreladas rigorosamente a esta campanha
+    const { data } = await supabase
+        .from('sheets')
+        .select('id, name, class, level, data, campaign_id')
+        .eq('user_id', authStore.user?.id)
+        .eq('campaign_id', campaignId)
+        
+    if (data) {
+        mySheets.value = data
+    }
+}
+
+function handleNpcSaved(sheetId: string) {
+    showNpcModal.value = false
+    fetchMySheets().then(() => {
+        handleSheetSelected(sheetId)
+    })
+}
+
+async function handleSheetSelected(sheetId: string) {
+    if (!myMemberId.value) return
+    savingSheet.value = true
+    sheetSaved.value = false
+    selectedSheetId.value = sheetId
+    showSheetSelector.value = false // close modal
+
+    const sheetIdToSave = sheetId === 'none' ? null : sheetId
+    
+    // Check if the sheet needs to be linked to this campaign first
+    if (sheetIdToSave) {
+        const sheet = mySheets.value.find(s => s.id === sheetIdToSave)
+        if (sheet && sheet.campaign_id !== campaignId) {
+             await supabase
+                .from('sheets')
+                .update({ campaign_id: campaignId })
+                .eq('id', sheetIdToSave)
+             sheet.campaign_id = campaignId // update locally
+        }
+    }
+
+    // Set as active character in campaign
+    const { error } = await supabase
+        .from('campaign_members')
+        .update({ sheet_id: sheetIdToSave })
+        .eq('id', myMemberId.value)
+
+    if (!error) {
+        // Update local state
+        const me = members.value.find(m => m.user_id === authStore.user?.id)
+        if (me) me.sheet_id = sheetIdToSave
+
+        localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, sheetIdToSave || 'none')
+
+        sheetSaved.value = true
+        setTimeout(() => { sheetSaved.value = false }, 2000)
+    }
+    savingSheet.value = false
+}
+
+function copyJoinCode() {
+    if (campaign.value?.join_code) {
+        navigator.clipboard.writeText(campaign.value.join_code)
+    }
+}
+
+function leaveCampaign() {
+    if (confirm('Sair da campanha?')) {
+        router.push('/dashboard')
+    }
+}
+
+onMounted(async () => {
+    await fetchCampaign()
+    await fetchMySheets()
+
+    // Validate if the selected sheet still exists 
+    // (User might have deleted it from the database manually)
+    if (selectedSheetId.value !== 'none') {
+        const stillExists = mySheets.value.some(s => s.id === selectedSheetId.value)
+        if (!stillExists) {
+            selectedSheetId.value = 'none'
+            localStorage.setItem(`last_sheet_${campaignId}_${authStore.user?.id}`, 'none')
+            // Optionally update the DB as well if we are the user
+            if (myMemberId.value) {
+                await supabase.from('campaign_members').update({ sheet_id: null }).eq('id', myMemberId.value)
+            }
+        }
+    }
+})
+</script>
+
+<template>
+    <div class="flex h-screen bg-background text-foreground overflow-hidden">
+        <!-- Main Content Area -->
+        <main class="flex-1 flex flex-col min-w-0" :class="{ 'hidden lg:flex': showChat && !myCurrentSheetId }">
+
+            <!-- Top Bar -->
+            <header class="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 bg-zinc-950/50">
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <Button variant="ghost" size="icon" @click="router.push('/dashboard')">
+                        <Scroll class="w-5 h-5 text-muted-foreground" />
+                    </Button>
+                    <div v-if="campaign" class="flex-1 min-w-0">
+                        <h1 class="font-serif font-bold text-lg sm:text-xl truncate max-w-[120px] sm:max-w-xs">{{ campaign.name }}</h1>
+                    </div>
+                    <div v-else class="h-6 w-24 sm:w-32 bg-zinc-800 animate-pulse rounded"></div>
+                </div>
+
+                <!-- Navigation Controls -->
+                <nav class="flex items-center gap-1">
+
+                    <!-- Notas -->
+                    <button
+                      @click="showNotes = !showNotes"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showNotes
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <BookOpen class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Notas</span>
+                    </button>
+
+                    <!-- Chat -->
+                    <button
+                      @click="showChat = !showChat"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors',
+                        showChat
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <MessageSquare class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Chat</span>
+                    </button>
+
+
+                    <!-- Trocar Ficha -->
+                    <button
+                      @click="showSheetSelector = true"
+                      :class="[
+                        'flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors border',
+                        sheetSaved
+                          ? 'border-green-600/40 bg-green-600/10 text-green-400'
+                          : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted'
+                      ]"
+                    >
+                      <LayoutTemplate class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">{{ selectedSheetId === 'none' ? 'Espectador' : 'Trocar Ficha' }}</span>
+                    </button>
+
+
+                    <!-- DM: Join Code -->
+                    <div v-if="campaign && isDM"
+                        class="hidden md:flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-md border border-zinc-800 h-8">
+                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Código:</span>
+                        <code class="text-xs font-mono text-primary font-bold">{{ campaign.join_code }}</code>
+                        <button @click="copyJoinCode" class="text-muted-foreground hover:text-foreground">
+                            <Copy class="w-3 h-3" />
+                        </button>
+                    </div>
+
+                    <!-- DM: Criar NPC -->
+                    <button v-if="isDM" @click="showNpcModal = true"
+                        class="hidden md:flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                        Criar NPC
+                    </button>
+
+                    <!-- Sair -->
+                    <button
+                      @click="leaveCampaign"
+                      class="flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut class="w-3.5 h-3.5 shrink-0" />
+                      <span class="hidden sm:inline">Sair</span>
+                    </button>
+                </nav>
+
+            </header>
+
+            <!-- Workspace Setup: Notepad (Left) + Sheet (Center) -->
+            <div class="flex-1 flex overflow-hidden relative">
+                <div v-if="loading" class="absolute inset-0 z-10 bg-background/50 flex justify-center py-20 backdrop-blur-sm">
+                    <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                </div>
+
+                <!-- Notepad (Left Panel) -->
+                <NotepadPanel 
+                  v-if="showNotes"
+                  :campaign-id="campaignId"
+                  :visible="showNotes"
+                  @close="showNotes = false"
+                />
+
+                <!-- Character Sheet (Center Panel) -->
+                <div class="flex-1 overflow-y-auto bg-background px-0 sm:px-4 lg:px-8 py-0 sm:py-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent hover:scrollbar-thumb-zinc-700" 
+                     :class="{ 'hidden lg:block': showNotes || (showChat && !myCurrentSheetId) }">
+                    <div v-if="myCurrentSheetId" class="h-full">
+                        <SheetView :sheet-id="myCurrentSheetId" is-embedded :on-roll="sendRoll"
+                            :on-attack-roll="sendAttackRoll" />
+                    </div>
+                    <div v-else class="flex flex-col items-center justify-center h-full text-center gap-4 p-8">
+                        <FileText class="w-12 h-12 text-zinc-800" />
+                        <h2 class="text-xl font-bold">Espectador</h2>
+                        <p class="text-muted-foreground max-w-sm">Você está acompanhando a campanha sem uma ficha ativa. Use o botão no topo para selecionar ou criar uma ficha para rolar dados.</p>
+                        <Button @click="showSheetSelector = true" class="mt-4">
+                             Selecionar Ficha
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Chat Sidebar -->
+        <ChatSidebar v-show="showChat" :campaign-id="campaignId" :member-name="myMemberName" :avatar-url="myAvatarUrl" :members="members" :dm-id="campaign?.dm_id"
+            v-model:recipientId="recipientId" class="w-full lg:w-96 flex-shrink-0" :class="{ 'hidden lg:flex': !showChat }" />
+
+        <!-- Modals -->
+        <QuickNpcModal v-if="showNpcModal" @close="showNpcModal = false" @saved="handleNpcSaved" />
+        <SheetSelectorModal v-model="showSheetSelector" :sheets="mySheets" :active-sheet-id="selectedSheetId" @select-sheet="handleSheetSelected" />
+    </div>
+</template>
+
+```
+
+
+---
+## FILE: src/views/CreateSheetView.vue
+```vue
+<script setup lang="ts">
+import { useWizardStore } from '@/stores/wizardStore'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import BasicInfoStep from '@/components/wizard/steps/BasicInfoStep.vue'
+import AttributesStep from '@/components/wizard/steps/AttributesStep.vue'
+import SkillsStep from '@/components/wizard/steps/SkillsStep.vue'
+import CombatStatsStep from '@/components/wizard/steps/CombatStatsStep.vue'
+import TypeStep from '@/components/wizard/steps/TypeStep.vue'
+import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-vue-next'
+
+const store = useWizardStore()
+const router = useRouter()
+const route = useRoute()
+
+const allSteps = [
+  { id: 'type', label: 'Tipo', short: 'Tipo' },
+  { id: 'info', label: 'Informações', short: 'Info' },
+  { id: 'attrs', label: 'Atributos', short: 'Attrs' },
+  { id: 'skills', label: 'Perícias', short: 'Perícias' },
+  { id: 'combat', label: 'Combate', short: 'Combate' },
+]
+
+const visibleSteps = computed(() => allSteps)
+
+// Auto-clamp step if type changes and shrinks available steps
+watch(() => visibleSteps.value.length, (newLen) => {
+  if (store.currentStep > newLen) {
+    store.setStep(newLen)
+  }
+})
+
+const currentStepLabel = computed(() => visibleSteps.value[store.currentStep - 1]?.label)
+const isLast = computed(() => store.currentStep === visibleSteps.value.length)
+
+function handleNext() {
+  if (store.currentStep < visibleSteps.value.length) {
+    store.setStep(store.currentStep + 1)
+  }
+}
+
+function handlePrev() {
+  if (store.currentStep > 1) {
+    store.setStep(store.currentStep - 1)
+  }
+}
+
+function handleCancel() {
+  if (confirm('Tem certeza que deseja cancelar? O progresso será perdido.')) {
+    const campaignId = route.query.campaignId
+    if (campaignId) {
+      router.push(`/campaign/${campaignId}`)
+    } else {
+      router.push('/dashboard')
+    }
+  }
+}
+
+async function handleFinish() {
+  const { data: { user } } = await import('@/lib/supabase').then(m => m.supabase.auth.getUser())
+  if (!user) {
+    alert('Você precisa estar logado.')
+    return
+  }
+
+  const campaignId = route.query.campaignId as string | undefined
+
+  const { error } = await import('@/lib/supabase').then(m => m.supabase
+    .from('sheets')
+    .insert({
+      user_id: user.id,
+      campaign_id: campaignId || null,
+      name: store.character.name,
+      class: store.character.class,
+      level: store.character.level,
+      race: store.character.race,
+      data: store.character
+    }))
+
+  if (error) {
+    alert('Falha ao salvar: ' + error.message)
+    return
+  }
+
+  if (campaignId) {
+    router.push(`/campaign/${campaignId}`)
+  } else {
+    router.push('/dashboard')
+  }
+}
+</script>
+
+<template>
+  <div class="min-h-screen bg-background text-foreground">
+    <div class="max-w-4xl mx-auto px-4 py-8 space-y-8">
+
+      <!-- Top header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-serif font-bold text-primary">Criar Personagem</h1>
+          <p class="text-muted-foreground text-sm mt-1">
+            Passo {{ store.currentStep }} de {{ visibleSteps.length }}: <span class="text-foreground font-medium">{{
+              currentStepLabel }}</span>
+          </p>
+        </div>
+        <Button variant="ghost" @click="handleCancel" class="text-muted-foreground hover:text-destructive">
+          Cancelar
+        </Button>
+      </div>
+
+      <!-- Stepper -->
+      <div class="relative flex items-center justify-between">
+        <!-- Progress line -->
+        <div class="absolute inset-x-0 top-4 h-px bg-border -z-10"></div>
+        <div class="absolute left-0 top-4 h-px bg-primary -z-10 transition-all duration-500"
+          :style="{ width: `${((store.currentStep - 1) / (visibleSteps.length - 1)) * 100}%` }"></div>
+
+        <button v-for="(step, i) in visibleSteps" :key="i" @click="store.setStep(i + 1)"
+          class="flex flex-col items-center gap-2 cursor-pointer group">
+          <div
+            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 bg-background transition-all duration-300"
+            :class="[
+              store.currentStep > i + 1
+                ? 'border-primary bg-primary text-primary-foreground'
+                : store.currentStep === i + 1
+                  ? 'border-primary text-primary ring-4 ring-primary/20'
+                  : 'border-border text-muted-foreground group-hover:border-primary/50'
+            ]">
+            <span v-if="store.currentStep > i + 1">✓</span>
+            <span v-else>{{ i + 1 }}</span>
+          </div>
+          <span class="text-xs font-medium hidden sm:block transition-colors"
+            :class="store.currentStep === i + 1 ? 'text-primary' : 'text-muted-foreground'">{{ step.short }}</span>
+        </button>
+      </div>
+
+      <!-- Wizard Card -->
+      <Card class="border-border shadow-lg">
+        <CardHeader class="border-b border-border bg-card">
+          <CardTitle class="font-serif text-primary">{{ currentStepLabel }}</CardTitle>
+        </CardHeader>
+
+        <CardContent class="p-6 min-h-[460px]">
+          <Transition name="slide" mode="out-in">
+            <div :key="visibleSteps[store.currentStep - 1]?.id || store.currentStep">
+              <TypeStep v-if="visibleSteps[store.currentStep - 1]?.id === 'type'" />
+              <BasicInfoStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'info'" />
+              <AttributesStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'attrs'" />
+              <SkillsStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'skills'" />
+              <CombatStatsStep v-else-if="visibleSteps[store.currentStep - 1]?.id === 'combat'" />
+            </div>
+          </Transition>
+        </CardContent>
+
+        <CardFooter class="border-t border-border bg-card flex justify-between p-6">
+          <Button variant="outline" @click="handlePrev" :disabled="store.currentStep === 1" class="gap-2">
+            <ChevronLeft class="w-4 h-4" /> Anterior
+          </Button>
+          <div class="flex gap-2">
+            <Button v-if="!isLast" @click="handleNext" class="gap-2">
+              Próximo
+              <ChevronRight class="w-4 h-4" />
+            </Button>
+            <Button v-else @click="handleFinish" class="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+              <CheckCircle class="w-4 h-4" /> Finalizar Ficha
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
+
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.slide-enter-active,
+.slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.slide-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.slide-leave-to {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+</style>
+
+```
+
+
+---
 ## FILE: src/views/DashboardView.vue
 ```vue
 <script setup lang="ts">
@@ -362,7 +1895,7 @@ const colorTokens = [
 ```vue
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -371,7 +1904,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const isLogin = ref(true)
@@ -697,19 +2229,20 @@ import { supabase } from '@/lib/supabase'
 import SummaryTab from '@/components/sheet/tabs/SummaryTab.vue'
 import SkillsTab from '@/components/sheet/tabs/SkillsTab.vue'
 import FeatsTab from '@/components/sheet/tabs/FeatsTab.vue'
-import SpellsTab from '@/components/sheet/tabs/SpellsTab.vue'
+
 import EquipmentTab from '@/components/sheet/tabs/EquipmentTab.vue'
 import ResourcesTab from '@/components/sheet/tabs/ResourcesTab.vue'
-import BuffsTab from '@/components/sheet/tabs/BuffsTab.vue'
 import ConfigTab from '@/components/sheet/tabs/ConfigTab.vue'
 
 // Shared components
 import ItemEditorModal from '@/components/sheet/ItemEditorModal.vue'
+import HeaderBlock from '@/components/sheet/blocks/HeaderBlock.vue'
+import CoreDataEditorModal from '@/components/sheet/CoreDataEditorModal.vue'
 
 // Icons
 import {
-  LayoutDashboard, Dices, Swords, Wand2, Package,
-  Shield, Flame, Settings, ChevronLeft, Loader2
+  LayoutDashboard, Dices, Swords, Package,
+  Shield, Settings, ChevronLeft, Loader2
 } from 'lucide-vue-next'
 
 // Composables & types
@@ -721,7 +2254,6 @@ import { useDeleteConfirm } from '@/composables/useDeleteConfirm'
 import { useDndCalculations } from '@/composables/useDndCalculations'
 import { useRolls } from '@/composables/useRolls'
 import { useSkills } from '@/composables/useSkills'
-import { useSpellSlots } from '@/composables/useSpellSlots'
 
 const route = useRoute()
 const router = useRouter()
@@ -730,7 +2262,7 @@ const props = defineProps<{
   sheetId?: string
   isEmbedded?: boolean
   onRoll?: (label: string, displayFormula: string, evalFormula?: string) => void
-  onDualRoll?: (label: string, atkDisplay: string, dmgDisplay: string, atkEval: string, dmgEval: string) => void
+  onAttackRoll?: (label: string, attackFormula: string, damageFormula: string) => void
 }>()
 
 const currentSheetId = computed(() => props.sheetId || route.params.id as string)
@@ -753,28 +2285,25 @@ const {
   meleeAtk, rangedAtk, grappleAtk,
   totalFort, totalRef, totalWill,
   deathStatus, totalWeight, adjustField
-} = useDndCalculations(d, editMode, editedData, sheet)
+} = useDndCalculations(d)
 
 const { resolveFormula, handleRoll, handleItemRoll } = useRolls({
   attrTotal, calcMod, modStr,
   totalCA, totalTouch, totalFlatFooted,
   totalBAB, meleeAtk, rangedAtk, grappleAtk,
   totalHP, totalInitiative, totalFort, totalRef, totalWill,
-  d, onRoll: props.onRoll, onDualRoll: props.onDualRoll
+  d, onRoll: props.onRoll, onAttackRoll: props.onAttackRoll
 })
 
 const { skillPhase, skillSearch, isClassSkill, filteredSkillsList, toggleSkillEdit, skillAbilityMod, skillTotal, adjustRank, addLevelUpSkillPoints, skillPointsSpent, activeSkills } = useSkills(d, editedData, editMode, sheet, calcMod, attrTotal, totalBonuses)
-const { SPELL_LEVELS, spellSlotsMax, spellSlotsUsed, adjustSlotUsed, adjustSlotMax } = useSpellSlots(sheet)
 
 // ── Tabs ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'summary', label: 'Resumo', icon: LayoutDashboard },
   { id: 'skills', label: 'Perícias', icon: Dices },
   { id: 'feats', label: 'Talentos', icon: Swords },
-  { id: 'spells', label: 'Magias', icon: Wand2 },
   { id: 'equipment', label: 'Itens', icon: Package },
-  { id: 'resources', label: 'Recursos', icon: Shield },
-  { id: 'buffs', label: 'Buffs', icon: Flame },
+  { id: 'resources', label: 'Recursos & Buffs', icon: Shield },
   { id: 'config', label: 'Config', icon: Settings },
 ]
 
@@ -807,7 +2336,10 @@ async function saveCurrentHP() {
 }
 
 async function saveEdit() {
-  await saveEditComp(spellSlotsMax.value, spellSlotsUsed.value)
+  await saveEditComp()
+  if (sheet.value) {
+    await saveSheet()
+  }
 }
 function toggleTabsEdit() {
   if (!tabsEditMode.value) skillPhase.value = 'select'
@@ -817,7 +2349,7 @@ function toggleTabsEdit() {
 // ── Delete ─────────────────────────────────────────────────────────────
 const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelete } = useDeleteConfirm(async (type, index) => {
   if (sheet.value?.data) {
-    const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
+    const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs', resource: 'resources' }
     const key = map[type]
     if (key && Array.isArray((sheet.value.data as any)[key])) {
       (sheet.value.data as any)[key].splice(index, 1)
@@ -826,9 +2358,10 @@ const { isDeleteOpen, deleteCountdown, confirmDelete, executeDelete, cancelDelet
   }
 })
 
-// ── Item Editor ────────────────────────────────────────────────────────
+// ── Item & Core Editor ──────────────────────────────────────────────────
 const editorOpen = ref(false)
-const editorType = ref<'feat' | 'spell' | 'shortcut' | 'equipment' | 'buff'>('feat')
+const coreEditorOpen = ref(false)
+const editorType = ref<'feat' | 'shortcut' | 'equipment' | 'buff'>('feat')
 const editorItem = ref<any>(null)
 const editorIndex = ref(-1)
 
@@ -845,7 +2378,7 @@ function openEquipmentEditor(item?: any, index = -1) {
 
 function handleEditorSave(data: any) {
   if (!sheet.value) return
-  const map: Record<string, string> = { feat: 'feats', spell: 'spells', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
+  const map: Record<string, string> = { feat: 'feats', shortcut: 'shortcuts', equipment: 'equipment', buff: 'buffs' }
   const key = map[editorType.value]
   if (!key) return
   if (!(sheet.value.data as any)[key]) (sheet.value.data as any)[key] = []
@@ -854,6 +2387,25 @@ function handleEditorSave(data: any) {
   else list.push(data)
   saveSheet()
 }
+
+async function handleCoreSave(meta: { name: string; class: string; level: number; race: string }, data: any) {
+  if (!sheet.value) return
+  // Update local
+  sheet.value.name = meta.name
+  sheet.value.class = meta.class
+  sheet.value.level = meta.level
+  sheet.value.race = meta.race
+  sheet.value.data = data
+  // Save both sets
+  try {
+    await saveSheetMeta(sheet.value.id, meta)
+    await saveSheetData(sheet.value.id, data)
+  } catch (err: any) {
+    alert('Erro ao salvar dados principais: ' + err.message)
+  }
+}
+
+
 
 // ── Resources ───────────────────────────────────────────────────────────
 function addResource(name: string, max: number) {
@@ -899,12 +2451,6 @@ function toggleBuff(i: number) {
   }
 }
 
-// ── Slot adjustments ───────────────────────────────────────────────────
-function handleAdjustSlot(level: number, delta: number, field: 'used' | 'max') {
-  if (field === 'used') adjustSlotUsed(level, delta)
-  else adjustSlotMax(level, delta)
-}
-
 // ── Fetch ──────────────────────────────────────────────────────────────
 async function fetchSheet() {
   if (!currentSheetId.value) return
@@ -940,31 +2486,22 @@ onMounted(fetchSheet)
       </div>
 
       <template v-else-if="sheet && d">
-        <!-- Character name bar -->
-        <div class="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <h1 class="text-xl font-extrabold font-serif text-zinc-100 leading-tight">{{ sheet.name }}</h1>
-            <p class="text-xs text-zinc-500 mt-0.5">
-              {{ sheet.race }} · {{ sheet.class }} · Nível {{ sheet.level }}
-              <span v-if="d.alignment" class="ml-1 text-zinc-600">· {{ d.alignment }}</span>
-            </p>
-          </div>
-          <!-- Edit mode badge -->
-          <div v-if="editMode" class="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5 text-xs font-bold text-primary">
-            ✏️ Modo Edição
-            <button @click="toggleTabsEdit" class="hover:text-primary/70 transition-colors ml-1">Salvar</button>
-          </div>
-        </div>
+        <HeaderBlock
+          :sheet="sheet"
+          :d="d"
+          :edit-mode="editMode"
+          @edit-core="coreEditorOpen = true"
+        />
 
         <!-- ═══ TAB BAR ═══ -->
         <div class="sticky top-0 z-30 mb-4 -mx-3 px-3" style="background: linear-gradient(to bottom, #0a0a0b 85%, transparent)">
           <div class="w-full overflow-x-auto scrollbar-hide pb-1">
-            <div class="flex gap-1 min-w-max bg-zinc-950/90 border border-zinc-800/70 rounded-xl p-1.5 backdrop-blur-sm">
+            <div class="flex gap-1 justify-between min-w-max bg-zinc-950/90 border border-zinc-800/70 rounded-xl p-1.5 backdrop-blur-sm">
               <button
                 v-for="tab in TABS"
                 :key="tab.id"
                 @click="activeTab = tab.id"
-                class="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap"
+                class="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200 whitespace-nowrap"
                 :class="activeTab === tab.id
                   ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
                   : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60'"
@@ -1016,6 +2553,7 @@ onMounted(fetchSheet)
             @adjust-resource="adjustResource"
             @reset-resources="resetResources"
             @delete-resource="deleteResource"
+            @toggle-buff="toggleBuff"
           />
 
           <!-- PERÍCIAS -->
@@ -1056,25 +2594,7 @@ onMounted(fetchSheet)
             :on-open-editor="openEditor"
             :on-delete="confirmDelete"
             :on-roll="handleRoll"
-            :on-dual-roll="(label, atkF, dmgF) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
-          />
-
-          <!-- MAGIAS -->
-          <SpellsTab
-            v-else-if="activeTab === 'spells'"
-            :d="d"
-            :edit-mode="editMode"
-            :tabs-edit-mode="tabsEditMode"
-            :spell-slots-max="spellSlotsMax"
-            :spell-slots-used="spellSlotsUsed"
-            :SPELL_LEVELS="SPELL_LEVELS"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
-            :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-roll-item="(spell: any) => handleItemRoll(spell)"
-            :on-adjust-slot="handleAdjustSlot"
-            :on-toggle-edit="toggleTabsEdit"
+            :on-attack-roll="(label: string, atkF: string, dmgF: string) => handleItemRoll({ title: label, isAttack: true, attackFormula: atkF, damageFormula: dmgF })"
           />
 
           <!-- ITENS -->
@@ -1088,26 +2608,21 @@ onMounted(fetchSheet)
             :on-toggle-equipped="toggleEquipped"
           />
 
-          <!-- RECURSOS -->
+          <!-- RECURSOS & BUFFS -->
           <ResourcesTab
             v-else-if="activeTab === 'resources'"
             :sheet="sheet"
+            :d="d"
             :edit-mode="editMode"
+            :mod-str="modStr"
+            :resolve-formula="resolveFormula"
             :on-adjust="adjustResource"
             :on-reset="resetResources"
             :on-add="addResource"
             :on-delete="deleteResource"
-          />
-
-          <!-- BUFFS -->
-          <BuffsTab
-            v-else-if="activeTab === 'buffs'"
-            :d="d"
-            :mod-str="modStr"
-            :resolve-formula="resolveFormula"
             :on-open-editor="openEditor"
-            :on-delete="confirmDelete"
-            :on-toggle="toggleBuff"
+            :on-delete-buff="(i: number) => confirmDelete('buff', i)"
+            :on-toggle-buff="toggleBuff"
           />
 
           <!-- CONFIG -->
@@ -1135,6 +2650,20 @@ onMounted(fetchSheet)
       @save="handleEditorSave"
     />
 
+    <!-- Core Data Editor Modal -->
+    <CoreDataEditorModal
+      v-if="sheet"
+      v-model="coreEditorOpen"
+      :sheet-name="sheet.name"
+      :sheet-class="sheet.class"
+      :sheet-level="sheet.level"
+      :sheet-race="sheet.race"
+      :data="sheet.data"
+      @save="handleCoreSave"
+    />
+
+
+
     <!-- Delete confirm -->
     <Teleport to="body">
       <div v-if="isDeleteOpen" class="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
@@ -1160,349 +2689,5 @@ onMounted(fetchSheet)
     </Teleport>
   </div>
 </template>
-
-```
-
-
----
-## FILE: supabase_setup.sql
-```sql
-/**
- * REVISED Supabase Setup Script (v4 - Sheet Sharing)
- * Fixes: Infinite recursion using SECURITY DEFINER function.
- * Enables: Viewing sheets linked to campaigns.
- * Use this to UPDATE your database.
- */
-
--- Create tables if not exist
-CREATE TABLE IF NOT EXISTS campaigns (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  name TEXT NOT NULL,
-  dm_id UUID REFERENCES auth.users(id) NOT NULL,
-  join_code TEXT UNIQUE NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS campaign_members (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE NOT NULL,
-  user_id UUID REFERENCES auth.users(id) NOT NULL,
-  sheet_id UUID REFERENCES sheets(id) ON DELETE SET NULL, 
-  role TEXT DEFAULT 'player' CHECK (role IN ('dm', 'player', 'spectator')),
-  UNIQUE(campaign_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE NOT NULL,
-  user_id UUID REFERENCES auth.users(id) NOT NULL,
-  sender_name TEXT NOT NULL, 
-  content TEXT NOT NULL,
-  type TEXT DEFAULT 'text' CHECK (type IN ('text', 'roll', 'system'))
-);
-
--- Enable RLS
-ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE campaign_members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
--- Assuming 'sheets' table already has RLS enabled. If not:
-ALTER TABLE sheets ENABLE ROW LEVEL SECURITY;
-
--- 
--- HELPER FUNCTION: Get campaigns a user is a member of.
--- Prevents infinite recursion by bypassing RLS on table READ.
---
-DROP FUNCTION IF EXISTS get_user_campaign_ids();
-
-CREATE OR REPLACE FUNCTION get_user_campaign_ids()
-RETURNS TABLE (campaign_id UUID) 
-LANGUAGE sql 
-SECURITY DEFINER 
-SET search_path = public
-STABLE
-AS $$
-  SELECT campaign_id FROM campaign_members WHERE user_id = auth.uid();
-$$;
-
--- CLEANUP OLD POLICIES
-DROP POLICY IF EXISTS "Users can view campaigns they belong to" ON campaigns;
-DROP POLICY IF EXISTS "Users can create campaigns" ON campaigns;
-DROP POLICY IF EXISTS "DM can update campaign" ON campaigns;
-DROP POLICY IF EXISTS "DM can delete campaign" ON campaigns;
-
-DROP POLICY IF EXISTS "Members can view other members" ON campaign_members;
-DROP POLICY IF EXISTS "Users can join campaigns" ON campaign_members;
-
-DROP POLICY IF EXISTS "Members can view messages" ON messages;
-DROP POLICY IF EXISTS "Members can send messages" ON messages;
-
-DROP POLICY IF EXISTS "Campaign members can view linked sheets" ON sheets;
-
-
--- RECREATE POLICIES
-
--- Campaigns:
-CREATE POLICY "Users can view campaigns they belong to" ON campaigns
-  FOR SELECT USING (
-    auth.uid() = dm_id OR 
-    id IN (SELECT campaign_id FROM get_user_campaign_ids())
-  );
-
-CREATE POLICY "Users can create campaigns" ON campaigns
-  FOR INSERT WITH CHECK (auth.uid() = dm_id);
-  
-CREATE POLICY "DM can update campaign" ON campaigns
-  FOR UPDATE USING (auth.uid() = dm_id);
-
-CREATE POLICY "DM can delete campaign" ON campaigns
-  FOR DELETE USING (auth.uid() = dm_id);
-
-
--- Campaign Members:
-CREATE POLICY "Members can view other members" ON campaign_members
-  FOR SELECT USING (
-    auth.uid() = user_id OR
-    campaign_id IN (SELECT campaign_id FROM get_user_campaign_ids()) OR
-    campaign_id IN (SELECT id FROM campaigns WHERE dm_id = auth.uid())
-  );
-
-CREATE POLICY "Users can join campaigns" ON campaign_members
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
--- Messages:
-CREATE POLICY "Members can view messages" ON messages
-  FOR SELECT USING (
-    campaign_id IN (SELECT campaign_id FROM get_user_campaign_ids()) OR
-    campaign_id IN (SELECT id FROM campaigns WHERE dm_id = auth.uid())
-  );
-
-CREATE POLICY "Members can send messages" ON messages
-  FOR INSERT WITH CHECK (
-    auth.uid() = user_id AND (
-      campaign_id IN (SELECT campaign_id FROM get_user_campaign_ids()) OR
-      campaign_id IN (SELECT id FROM campaigns WHERE dm_id = auth.uid())
-    )
-  );
-
--- Sheets:
--- Allow viewing sheets that are linked to a campaign I am also in (or DM of)
-CREATE POLICY "Campaign members can view linked sheets" ON sheets
-  FOR SELECT USING (
-    -- Access if sheet is linked to a campaign I am in
-    id IN (
-      SELECT sheet_id FROM campaign_members 
-      WHERE campaign_id IN (SELECT campaign_id FROM get_user_campaign_ids())
-    ) 
-    OR
-    -- Access if sheet is linked to a campaign I DM
-    id IN (
-      SELECT sheet_id FROM campaign_members 
-      WHERE campaign_id IN (SELECT id FROM campaigns WHERE dm_id = auth.uid())
-    )
-  );
-
--- Grants (To ensure authenticated user has access)
-GRANT EXECUTE ON FUNCTION get_user_campaign_ids TO authenticated;
-GRANT ALL ON campaign_members TO authenticated;
-GRANT ALL ON campaigns TO authenticated;
-GRANT ALL ON messages TO authenticated;
-
-```
-
-
----
-## FILE: tailwind.config.js
-```javascript
-/** @type {import('tailwindcss').Config} */
-export default {
-    content: [
-        "./index.html",
-        "./src/**/*.{vue,js,ts,jsx,tsx}",
-    ],
-    theme: {
-        container: {
-            center: true,
-            padding: "2rem",
-            screens: {
-                "2xl": "1400px",
-            },
-        },
-        extend: {
-            colors: {
-                border: "hsl(var(--border))",
-                input: "hsl(var(--input))",
-                ring: "hsl(var(--ring))",
-                background: "hsl(var(--background))",
-                foreground: "hsl(var(--foreground))",
-                primary: {
-                    DEFAULT: "hsl(var(--primary))",
-                    foreground: "hsl(var(--primary-foreground))",
-                },
-                secondary: {
-                    DEFAULT: "hsl(var(--secondary))",
-                    foreground: "hsl(var(--secondary-foreground))",
-                },
-                destructive: {
-                    DEFAULT: "hsl(var(--destructive))",
-                    foreground: "hsl(var(--destructive-foreground))",
-                },
-                muted: {
-                    DEFAULT: "hsl(var(--muted))",
-                    foreground: "hsl(var(--muted-foreground))",
-                },
-                accent: {
-                    DEFAULT: "hsl(var(--accent))",
-                    foreground: "hsl(var(--accent-foreground))",
-                },
-                popover: {
-                    DEFAULT: "hsl(var(--popover))",
-                    foreground: "hsl(var(--popover-foreground))",
-                },
-                card: {
-                    DEFAULT: "hsl(var(--card))",
-                    foreground: "hsl(var(--card-foreground))",
-                },
-                lumina: {
-                    text: "#E4E4E7", // zinc-200
-                    "text-muted": "#71717A", // zinc-500
-                    detail: "#DFD4BD", // Gold/Beige
-                    border: "#27272A", // zinc-800
-                    card: "#18181B", // zinc-900
-                    bg: "#09090B", // zinc-950
-                },
-            },
-            borderRadius: {
-                xl: "calc(var(--radius) + 4px)",
-                lg: "var(--radius)",
-                md: "calc(var(--radius) - 2px)",
-                sm: "calc(var(--radius) - 4px)",
-            },
-            fontFamily: {
-                sans: ["Inter", "sans-serif"],
-                serif: ["Merriweather", "serif"],
-            },
-            keyframes: {},
-        },
-    },
-    plugins: [
-        require('tailwind-scrollbar'),
-    ],
-}
-
-```
-
-
----
-## FILE: tsconfig.app.json
-```json
-{
-  "extends": "@vue/tsconfig/tsconfig.dom.json",
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "types": [
-      "vite/client"
-    ],
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    }
-  },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "src/**/*.vue"
-  ]
-}
-```
-
-
----
-## FILE: tsconfig.json
-```json
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-
-```
-
-
----
-## FILE: tsconfig.node.json
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "types": ["node"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
-  },
-  "include": ["vite.config.ts"]
-}
-
-```
-
-
----
-## FILE: vercel.json
-```json
-{
-    "rewrites": [
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
-        }
-    ]
-}
-```
-
-
----
-## FILE: vite.config.ts
-```typescript
-import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  }
-})
 
 ```

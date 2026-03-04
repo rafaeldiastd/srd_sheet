@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { ChevronDown, ChevronUp, Swords, Zap, Wand2, Package, Flame, ShieldAlert } from 'lucide-vue-next'
+﻿<script setup lang="ts">
+import { ChevronDown, ChevronUp, Swords, Zap, Package, Flame, ShieldAlert, MessageSquare } from 'lucide-vue-next'
 import { ref, computed } from 'vue'
 import VitalsBlock from '@/components/sheet/blocks/VitalsBlock.vue'
 import AttrsBlock from '@/components/sheet/blocks/AttrsBlock.vue'
@@ -13,7 +13,7 @@ const props = defineProps<{
   d: any
   editMode: boolean
   editedData: any
-  preparedSpells: Record<number, (string | null)[]>
+
   // combat
   totalHP: number
   totalCA: number
@@ -37,13 +37,16 @@ const props = defineProps<{
   resolveFormula: (formula: string) => string
   ATTR_KEYS: readonly string[]
   ATTR_LABELS: Record<string, string>
+  onShowDescription: (title: string, desc: string) => void
 }>()
+
+const activeFeats = computed(() => (props.d?.feats || []).filter((f: any) => f.active && f.activeModifiers?.length > 0))
+const activeEquipment = computed(() => (props.d?.equipment || []).filter((e: any) => e.equipped && e.active && e.activeModifiers?.length > 0))
 
 const emit = defineEmits<{
   (e: 'save-hp'): void
   (e: 'roll', label: string, formula: string): void
   (e: 'roll-item', item: any): void
-  (e: 'roll-spell', spell: any): void
   (e: 'add-shortcut'): void
   (e: 'delete-shortcut', i: number): void
   (e: 'add-resource', name: string, max: number): void
@@ -51,6 +54,8 @@ const emit = defineEmits<{
   (e: 'reset-resources'): void
   (e: 'delete-resource', i: number): void
   (e: 'toggle-buff', i: number): void
+  (e: 'toggle-feat-active', i: number): void
+  (e: 'toggle-equipment-active', i: number): void
   (e: 'toggle-equipped', i: number): void
 }>()
 
@@ -66,7 +71,7 @@ function isPanelOpen(id: string) {
 }
 
 const ALL_PANELS = [
-  { id: 'spells',    label: 'Magias',       icon: Wand2 },
+
   { id: 'feats',     label: 'Talentos',     icon: Swords },
   { id: 'equipment', label: 'Equipamentos', icon: Package },
   { id: 'buffs',     label: 'Buffs',        icon: Flame },
@@ -136,49 +141,107 @@ function panelCount(id: string) {
         />
 
         <!-- SAVES -->
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 flex flex-col gap-2 justify-start">
+        <div class="rounded-xl border border-border bg-card/80 p-4 flex flex-col gap-2 justify-start">
           <div class="flex items-center gap-2 mb-2">
-            <ShieldAlert class="w-4 h-4 text-zinc-400" />
-            <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Salvaguardas</span>
+            <ShieldAlert class="w-4 h-4 text-muted-foreground" />
+            <span class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Salvaguardas</span>
           </div>
           <button @click="emit('roll', 'Fortitude', '1d20 + @fort')"
-            class="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
-            <div class="text-[10px] text-zinc-500 font-bold uppercase mb-0.5">Fortitude</div>
-            <div class="text-base font-extrabold font-serif text-zinc-100">{{ modStr(totalFort) }}</div>
+            class="rounded-lg bg-muted/60 border border-border px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
+            <div class="text-[10px] text-muted-foreground font-bold uppercase mb-0.5">Fortitude</div>
+            <div class="text-base font-extrabold font-serif text-foreground">{{ modStr(totalFort) }}</div>
           </button>
           <button @click="emit('roll', 'Reflexos', '1d20 + @ref')"
-            class="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
-            <div class="text-[10px] text-zinc-500 font-bold uppercase mb-0.5">Reflexos</div>
-            <div class="text-base font-extrabold font-serif text-zinc-100">{{ modStr(totalRef) }}</div>
+            class="rounded-lg bg-muted/60 border border-border px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
+            <div class="text-[10px] text-muted-foreground font-bold uppercase mb-0.5">Reflexos</div>
+            <div class="text-base font-extrabold font-serif text-foreground">{{ modStr(totalRef) }}</div>
           </button>
           <button @click="emit('roll', 'Vontade', '1d20 + @will')"
-            class="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
-            <div class="text-[10px] text-zinc-500 font-bold uppercase mb-0.5">Vontade</div>
-            <div class="text-base font-extrabold font-serif text-zinc-100">{{ modStr(totalWill) }}</div>
+            class="rounded-lg bg-muted/60 border border-border px-2 py-1.5 hover:border-primary/40 hover:bg-primary/5 transition-colors flex flex-col items-center">
+            <div class="text-[10px] text-muted-foreground font-bold uppercase mb-0.5">Vontade</div>
+            <div class="text-base font-extrabold font-serif text-foreground">{{ modStr(totalWill) }}</div>
           </button>
         </div>
 
-        <!-- BUFFS mini-list -->
-        <div class="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 overflow-hidden flex flex-col justify-start">
+        <!-- CONDITIONS & BUFFS mini-list -->
+        <div class="rounded-xl border border-border bg-card/80 p-4 overflow-hidden flex flex-col justify-start">
           <div class="flex items-center gap-2 mb-2">
-            <Flame class="w-4 h-4 text-zinc-400" />
-            <span class="text-xs font-bold uppercase tracking-widest text-zinc-400">Buffs & Condições</span>
+            <Flame class="w-4 h-4 text-muted-foreground" />
+            <span class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status & Buffs</span>
           </div>
-          <div v-if="!d?.buffs?.length"
-            class="text-center py-3 text-zinc-600 text-xs">Nenhum buff.</div>
+          <div v-if="!d?.buffs?.length && !Object.values(d?.conditions || {}).some(v => v) && !activeFeats.length && !activeEquipment.length"
+            class="text-center py-3 text-muted-foreground/60 text-xs text-balance">Nenhum status ativo.</div>
           <div v-else class="space-y-1 overflow-y-auto max-h-40">
+            <!-- Conditions -->
+            <template v-if="d.conditions">
+              <div v-for="(active, key) in d.conditions" :key="'cond-'+key">
+                <div v-if="active" 
+                   class="flex items-center gap-2 py-1 px-1.5 rounded bg-red-500/10 border border-red-500/20 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
+                  {{ key }}
+                </div>
+              </div>
+            </template>
+
+            <!-- Active Feats Buffs -->
+            <div v-for="(feat, i) in d.feats" :key="'feat-buff-'+i">
+              <div v-if="feat.active && feat.activeModifiers?.length"
+                @click="emit('toggle-feat-active', Number(i))"
+                class="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/50 px-1 rounded transition-colors group">
+                <button class="flex items-center justify-center w-5 h-5 rounded-md border bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shrink-0">
+                  <Zap class="w-3 h-3 fill-cyan-500/50" />
+                </button>
+                <span class="text-xs truncate text-foreground flex-1">{{ feat.title }}</span>
+                <button v-if="feat.description"
+                  @click.stop="onShowDescription(feat.title, feat.description)"
+                  class="p-1 px-2 text-muted-foreground hover:text-primary transition-all rounded hover:bg-muted" title="Ver descrição no chat">
+                  <MessageSquare class="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Equipment Buffs -->
+            <div v-for="(item, i) in d.equipment" :key="'item-buff-'+i">
+              <div v-if="item.equipped && item.active && item.activeModifiers?.length"
+                @click="emit('toggle-equipment-active', Number(i))"
+                class="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/50 px-1 rounded transition-colors group">
+                <button class="flex items-center justify-center w-5 h-5 rounded-md border bg-blue-500/20 border-blue-500/50 text-blue-400 shrink-0">
+                  <Package class="w-3 h-3 fill-blue-500/50" />
+                </button>
+                <span class="text-xs truncate text-foreground flex-1">{{ item.title }}</span>
+                <button v-if="item.description"
+                  @click.stop="onShowDescription(item.title, item.description)"
+                  class="p-1 px-2 text-muted-foreground hover:text-primary transition-all rounded hover:bg-muted" title="Ver descrição no chat">
+                  <MessageSquare class="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Buffs -->
             <div v-for="(buf, i) in d.buffs" :key="i"
-              class="flex items-center gap-2 py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-800/50 px-1 rounded transition-colors group"
+              class="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/50 px-1 rounded transition-colors group"
               @click="emit('toggle-buff', Number(i))">
               <button 
                 class="flex items-center justify-center w-5 h-5 rounded-md border transition-colors shrink-0"
-                :class="buf.active ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-zinc-900 border-zinc-700 text-zinc-600'">
+                :class="buf.active ? 'bg-orange-500/20 border-orange-500/50 text-orange-400' : 'bg-muted border-border text-muted-foreground'">
                 <Flame class="w-3 h-3" :class="buf.active ? 'fill-orange-500/50 text-orange-400' : ''" />
               </button>
-              <span class="text-xs truncate transition-colors"
-                :class="buf.active ? 'text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-300'">
+              <span class="text-xs truncate transition-colors flex-1"
+                :class="buf.active ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground/70'">
                 {{ buf.title }}
               </span>
+              <div class="flex items-center gap-1">
+                <button v-if="buf.description"
+                  @click.stop="onShowDescription(buf.title, buf.description)"
+                  class="p-1 text-muted-foreground hover:text-primary transition-all rounded hover:bg-muted" title="Ver descrição no chat">
+                  <MessageSquare class="w-3 h-3" />
+                </button>
+                <button v-if="buf.isAttack"
+                  @click.stop="emit('roll-item', buf)"
+                  class="text-[10px] px-1.5 py-0.5 rounded bg-red-900/20 border border-red-800/40 text-red-200 hover:bg-red-800/40 transition-colors">
+                  Atacar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -207,14 +270,13 @@ function panelCount(id: string) {
       <div class="grid gap-3" style="grid-template-columns: 2fr 1fr;">
         <ShortcutsBlock
           :d="d"
-          :prepared-spells="preparedSpells"
           :mod-str="modStr"
           :resolve-formula="resolveFormula"
           :edit-mode="editMode"
           :on-roll-item="(item) => emit('roll-item', item)"
-          :on-roll-spell="(spell) => emit('roll-spell', spell)"
           :on-add-shortcut="() => emit('add-shortcut')"
           :on-delete-shortcut="(idx) => emit('delete-shortcut', idx)"
+          :onShowDescription="onShowDescription"
         />
         <ResourcesBlock
           :sheet="sheet"
@@ -236,94 +298,94 @@ function panelCount(id: string) {
         <button v-for="panel in ALL_PANELS" :key="'toggle-'+panel.id"
           @click="togglePanelVisibility(panel.id)"
           class="px-2 py-1 rounded border text-xs font-semibold transition-colors"
-          :class="visiblePanels.some(p => p.id === panel.id) ? 'bg-primary text-primary-foreground border-primary' : 'bg-zinc-900 text-zinc-500 border-zinc-700'">
+          :class="visiblePanels.some(p => p.id === panel.id) ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border'">
           {{ panel.label }}
         </button>
       </div>
 
       <div v-for="panel in visiblePanels" :key="panel.id"
-        class="rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden">
+        class="rounded-xl border border-border bg-card/60 overflow-hidden">
 
         <!-- Panel header -->
         <button
-          class="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-900/40 transition-colors"
+          class="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
           @click="togglePanel(panel.id)">
           <div class="flex items-center gap-2">
-            <component :is="panel.icon" class="w-4 h-4 text-zinc-500" />
-            <span class="text-sm font-bold text-zinc-300">{{ panel.label }}</span>
-            <span class="text-xs text-zinc-600 bg-zinc-800 rounded-full px-2 py-0.5">{{ panelCount(panel.id) }}</span>
+            <component :is="panel.icon" class="w-4 h-4 text-muted-foreground" />
+            <span class="text-sm font-bold text-foreground/80">{{ panel.label }}</span>
+            <span class="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">{{ panelCount(panel.id) }}</span>
           </div>
-          <ChevronDown v-if="!isPanelOpen(panel.id)" class="w-4 h-4 text-zinc-600" />
-          <ChevronUp v-else class="w-4 h-4 text-zinc-600" />
+          <ChevronDown v-if="!isPanelOpen(panel.id)" class="w-4 h-4 text-muted-foreground" />
+          <ChevronUp v-else class="w-4 h-4 text-muted-foreground" />
         </button>
 
         <!-- Panel content -->
-        <div v-if="isPanelOpen(panel.id)" class="border-t border-zinc-800/50 px-4 py-3 space-y-2">
+        <div v-if="isPanelOpen(panel.id)" class="border-t border-border/50 px-4 py-3 space-y-2">
 
-          <!-- MAGIAS -->
-          <template v-if="panel.id === 'spells'">
-            <div v-if="!d?.spells?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhuma magia.</div>
-            <div v-else class="space-y-1">
-              <div v-for="(spell, i) in d.spells" :key="i"
-                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0">
-                <div>
-                  <span class="text-sm font-semibold text-violet-200">{{ spell.title }}</span>
-                  <span v-if="spell.school" class="ml-2 text-[10px] text-zinc-600 bg-zinc-800 rounded px-1.5">{{ spell.school }}</span>
-                  <span class="ml-2 text-[10px] text-zinc-600">Nv.{{ spell.spellLevel ?? 0 }}</span>
-                </div>
-                <button v-if="spell.rollFormula"
-                  @click="emit('roll', spell.title, spell.rollFormula)"
-                  class="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                  Rolar
-                </button>
-              </div>
-            </div>
-          </template>
 
           <!-- TALENTOS -->
-          <template v-else-if="panel.id === 'feats'">
-            <div v-if="!d?.feats?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum talento.</div>
+          <template v-if="panel.id === 'feats'">
+            <div v-if="!d?.feats?.length" class="text-center py-4 text-muted-foreground text-xs">Nenhum talento.</div>
             <div v-else class="space-y-1">
               <div v-for="(feat, i) in d.feats" :key="i"
-                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0">
+                class="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
                 <div class="flex items-center gap-2">
                   <component :is="feat.isAttack ? Swords : Zap"
                     class="w-3.5 h-3.5 shrink-0"
                     :class="feat.isAttack ? 'text-red-400' : 'text-primary'" />
-                  <span class="text-sm font-semibold text-zinc-200">{{ feat.title }}</span>
+                  <span class="text-sm font-semibold text-foreground">{{ feat.title }}</span>
                 </div>
-                <button v-if="feat.isAttack"
-                  @click="emit('roll-item', feat)"
-                  class="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                  Atacar
-                </button>
-                <button v-else-if="feat.rollFormula"
-                  @click="emit('roll', feat.title, feat.rollFormula)"
-                  class="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                  Rolar
-                </button>
+                <div class="flex items-center gap-1">
+                  <button v-if="feat.description"
+                    @click.stop="onShowDescription(feat.title, feat.description)"
+                    class="p-1 text-muted-foreground hover:text-primary transition-all rounded hover:bg-muted">
+                    <MessageSquare class="w-3.5 h-3.5" />
+                  </button>
+                  <button v-if="feat.isAttack"
+                    @click="emit('roll-item', feat)"
+                    class="text-xs px-2 py-0.5 rounded bg-muted border border-border text-foreground/80 hover:bg-muted/80 transition-colors">
+                    Atacar
+                  </button>
+                  <button v-else-if="feat.rollFormula"
+                    @click="emit('roll', feat.title, feat.rollFormula)"
+                    class="text-xs px-2 py-0.5 rounded bg-muted border border-border text-foreground/80 hover:bg-muted/80 transition-colors">
+                    Rolar
+                  </button>
+                </div>
               </div>
             </div>
           </template>
 
           <!-- EQUIPAMENTOS -->
           <template v-else-if="panel.id === 'equipment'">
-            <div v-if="!d?.equipment?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum item.</div>
+            <div v-if="!d?.equipment?.length" class="text-center py-4 text-muted-foreground text-xs">Nenhum item.</div>
             <div v-else class="space-y-1">
               <div v-for="(item, i) in d.equipment" :key="i"
-                class="flex items-center justify-between py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-600/10 px-2 rounded -mx-2 transition-colors"
+                class="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/10 px-2 rounded -mx-2 transition-colors"
                 @click="emit('toggle-equipped', Number(i))">
-                <div>
+                <div class="flex-1">
                   <span class="text-sm font-semibold transition-colors"
-                    :class="item.equipped ? 'text-primary/90' : 'text-zinc-300 group-hover:text-zinc-200'">{{ item.title }}</span>
+                    :class="item.equipped ? 'text-primary/90' : 'text-foreground/80 group-hover:text-foreground'">{{ item.title }}</span>
                   <span v-if="item.equipped" class="ml-2 text-[10px] text-primary/50">• equipado</span>
-                  <span v-if="item.weight" class="ml-2 text-[10px] text-zinc-600">{{ item.weight }}kg</span>
+                  <span v-if="item.weight" class="ml-2 text-[10px] text-muted-foreground/50">{{ item.weight }}kg</span>
                 </div>
-                <!-- checkbox / switch visual indicator -->
-                <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
-                     :class="item.equipped ? 'border-primary/50 bg-primary/20 justify-end' : 'border-zinc-700 bg-zinc-900 justify-start'">
-                     <div class="w-3 h-3 rounded-full bg-current"
-                          :class="item.equipped ? 'text-primary' : 'text-zinc-500'"></div>
+                <div class="flex items-center gap-2">
+                  <button v-if="item.description"
+                    @click.stop="onShowDescription(item.title, item.description)"
+                    class="p-1 text-muted-foreground hover:text-primary transition-all rounded hover:bg-muted">
+                    <MessageSquare class="w-3.5 h-3.5" />
+                  </button>
+                  <button v-if="item.isAttack"
+                    @click.stop="emit('roll-item', item)"
+                    class="text-[10px] px-1.5 py-0.5 rounded bg-red-900/20 border border-red-800/40 text-red-200 hover:bg-red-800/40 transition-colors">
+                    Atacar
+                  </button>
+                  <!-- checkbox / switch visual indicator -->
+                  <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
+                      :class="item.equipped ? 'border-primary/50 bg-primary/20 justify-end' : 'border-border bg-muted justify-start'">
+                      <div class="w-3 h-3 rounded-full bg-current"
+                            :class="item.equipped ? 'text-primary' : 'text-muted-foreground'"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -331,25 +393,33 @@ function panelCount(id: string) {
 
           <!-- BUFFS -->
           <template v-else-if="panel.id === 'buffs'">
-            <div v-if="!d?.buffs?.length" class="text-center py-4 text-zinc-600 text-xs">Nenhum buff.</div>
+            <div v-if="!d?.buffs?.length" class="text-center py-4 text-muted-foreground text-xs">Nenhum buff.</div>
             <div v-else class="space-y-1">
               <div v-for="(buf, i) in d.buffs" :key="i"
-                class="flex items-center gap-3 py-1.5 border-b border-zinc-800/40 last:border-0 cursor-pointer hover:bg-zinc-600/10 px-2 rounded -mx-2 transition-colors"
+                class="flex items-center gap-3 py-1.5 border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/10 px-2 rounded -mx-2 transition-colors"
                 @click="emit('toggle-buff', Number(i))">
                 <Flame class="w-3.5 h-3.5 shrink-0"
-                  :class="buf.active ? 'text-primary' : 'text-zinc-700'" />
+                  :class="buf.active ? 'text-primary' : 'text-muted-foreground'" />
                 <div class="flex-1">
                   <span class="text-sm font-semibold"
-                    :class="buf.active ? 'text-zinc-200' : 'text-zinc-500'">{{ buf.title }}</span>
-                  <div v-if="buf.modifiers?.length" class="text-[10px] text-zinc-600 mt-0.5">
+                    :class="buf.active ? 'text-foreground' : 'text-muted-foreground'">{{ buf.title }}</span>
+                  <div v-if="buf.modifiers?.length" class="text-[10px] text-muted-foreground/50 mt-0.5">
                     {{ buf.modifiers.map((m: any) => `${m.target} ${modStr(m.value)}`).join(' · ') }}
                   </div>
                 </div>
-                <!-- checkbox / switch visual indicator -->
-                <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
-                     :class="buf.active ? 'border-primary/50 bg-primary/20 justify-end' : 'border-zinc-700 bg-zinc-900 justify-start'">
-                     <div class="w-3 h-3 rounded-full bg-current"
-                          :class="buf.active ? 'text-primary' : 'text-zinc-500'"></div>
+                <!-- actions -->
+                <div class="flex items-center gap-2">
+                  <button v-if="buf.description"
+                    @click.stop="onShowDescription(buf.title, buf.description)"
+                    class="p-1 text-muted-foreground/60 hover:text-primary transition-all rounded hover:bg-accent">
+                    <MessageSquare class="w-3.5 h-3.5" />
+                  </button>
+                  <!-- checkbox / switch visual indicator -->
+                  <div class="w-8 h-4 rounded-full border flex items-center p-0.5 transition-colors"
+                      :class="buf.active ? 'border-primary/50 bg-primary/20 justify-end' : 'border-border bg-muted justify-start'">
+                      <div class="w-3 h-3 rounded-full bg-current"
+                            :class="buf.active ? 'text-primary' : 'text-muted-foreground'"></div>
+                  </div>
                 </div>
               </div>
             </div>

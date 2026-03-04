@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -44,7 +44,6 @@ async function save() {
         saves: {},
         equipment: [],
         feats: [],
-        spells: [],
         bonuses: {
             ca: npc.value.ac - 10, // Assuming base CA is 10
             fort: 0,
@@ -91,30 +90,30 @@ async function save() {
 <template>
     <div class="fixed inset-0 z-50 bg-black/80 flex justify-center p-4 overflow-y-auto">
         <div
-            class="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-md my-auto flex flex-col max-h-[90vh]">
+            class="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md my-auto flex flex-col max-h-[90vh]">
 
-            <div class="p-4 border-b border-zinc-800 flex items-center justify-between shrink-0">
+            <div class="p-4 border-b border-border flex items-center justify-between shrink-0">
                 <h2 class="text-lg font-bold flex items-center gap-2">
                     <Ghost class="w-5 h-5 text-primary" /> Criar NPC Rápido
                 </h2>
-                <button @click="$emit('close')" class="text-muted-foreground hover:text-foreground">✕</button>
+                <button @click="$emit('close')" class="text-muted-foreground hover:text-foreground"></button>
             </div>
 
             <div class="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
 
                 <div class="space-y-1">
                     <label class="text-xs font-bold text-muted-foreground uppercase">Nome do NPC / Monstro</label>
-                    <Input v-model="npc.name" placeholder="Ex: Goblin Arqueiro" class="bg-zinc-900 border-zinc-800" />
+                    <Input v-model="npc.name" placeholder="Ex: Goblin Arqueiro" class="bg-muted border-border" />
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div class="space-y-1">
                         <label class="text-xs font-bold text-muted-foreground uppercase">HP (Pontos de Vida)</label>
-                        <Input type="number" v-model.number="npc.hp" class="bg-zinc-900 border-zinc-800 tabular-nums" />
+                        <Input type="number" v-model.number="npc.hp" class="bg-muted border-border tabular-nums" />
                     </div>
                     <div class="space-y-1">
                         <label class="text-xs font-bold text-muted-foreground uppercase">CA (Classe de Armadura)</label>
-                        <Input type="number" v-model.number="npc.ac" class="bg-zinc-900 border-zinc-800 tabular-nums" />
+                        <Input type="number" v-model.number="npc.ac" class="bg-muted border-border tabular-nums" />
                     </div>
                 </div>
 
@@ -127,18 +126,18 @@ async function save() {
                     </div>
 
                     <div v-for="(atk, i) in npc.attacks" :key="i"
-                        class="p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg relative space-y-2">
+                        class="p-3 bg-muted/50 border border-border rounded-lg relative space-y-2">
                         <button @click="removeAttack(i)"
                             class="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors">
                             <Trash2 class="w-3 h-3" />
                         </button>
                         <Input v-model="atk.title" placeholder="Nome do Ataque (Ex: Arco Curto)"
-                            class="bg-zinc-950 border-zinc-800 h-8 pr-8 text-sm" />
+                            class="bg-card border-border h-8 pr-8 text-sm" />
                         <div class="grid grid-cols-2 gap-2">
                             <Input v-model="atk.attack" placeholder="Ataque (Ex: 1d20+4)"
-                                class="bg-zinc-950 border-zinc-800 h-8 text-sm font-mono text-amber-500" />
+                                class="bg-card border-border h-8 text-sm font-mono text-amber-500" />
                             <Input v-model="atk.damage" placeholder="Dano (Ex: 1d6+2)"
-                                class="bg-zinc-950 border-zinc-800 h-8 text-sm font-mono text-red-400" />
+                                class="bg-card border-border h-8 text-sm font-mono text-red-400" />
                         </div>
                     </div>
                     <p v-if="!npc.attacks.length" class="text-[10px] text-muted-foreground/50 text-center italic py-2">
@@ -148,12 +147,12 @@ async function save() {
                 <div class="space-y-1 pt-2">
                     <label class="text-xs font-bold text-muted-foreground uppercase">Notas do Mestre</label>
                     <Textarea v-model="npc.notes" placeholder="Táticas, resistências, itens no inventário..."
-                        class="bg-zinc-900 border-zinc-800 resize-none h-16" />
+                        class="bg-muted border-border resize-none h-16" />
                 </div>
 
             </div>
 
-            <div class="p-4 border-t border-zinc-800 flex justify-end gap-2 shrink-0 bg-zinc-900/30">
+            <div class="p-4 border-t border-border flex justify-end gap-2 shrink-0 bg-muted/30">
                 <Button variant="ghost" @click="$emit('close')" :disabled="saving">Cancelar</Button>
                 <Button @click="save" :disabled="!npc.name.trim() || saving">
                     {{ saving ? 'Criando...' : 'Criar NPC' }}

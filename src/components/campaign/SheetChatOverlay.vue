@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
@@ -43,9 +43,9 @@ onMounted(() => {
 
 <template>
     <div
-        class="fixed inset-y-0 right-0 w-80 md:w-96 bg-zinc-950 border-l border-zinc-900 z-50 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+        class="fixed inset-y-0 right-0 w-80 md:w-96 bg-card border-l border-border z-50 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
         <!-- Header -->
-        <div class="p-3 border-b border-zinc-900 flex items-center justify-between bg-zinc-900/50">
+        <div class="p-3 border-b border-border flex items-center justify-between bg-muted/50">
             <div class="flex items-center gap-2">
                 <Sword class="w-4 h-4 text-primary" />
                 <span class="font-bold text-sm">Chat da Mesa</span>
@@ -57,9 +57,9 @@ onMounted(() => {
         </div>
 
         <!-- Campaign Selector (if multiple) -->
-        <div v-if="campaigns.length > 1" class="p-2 border-b border-zinc-900 bg-zinc-900/30">
+        <div v-if="campaigns.length > 1" class="p-2 border-b border-border bg-muted/30">
             <Select v-model="selectedCampaignId">
-                <SelectTrigger class="h-8 text-xs bg-zinc-950 border-zinc-800">
+                <SelectTrigger class="h-8 text-xs bg-card border-border">
                     <SelectValue placeholder="Selecione a campanha" />
                 </SelectTrigger>
                 <SelectContent>
@@ -78,9 +78,9 @@ onMounted(() => {
 
             <div v-else-if="campaigns.length === 0"
                 class="flex flex-col items-center justify-center h-full text-center p-6 space-y-3">
-                <Sword class="w-10 h-10 text-zinc-800" />
+                <Sword class="w-10 h-10 text-muted-foreground/30" />
                 <p class="text-sm text-muted-foreground">Você não está em nenhuma campanha.</p>
-                <p class="text-xs text-zinc-600">Volte ao Dashboard para criar ou entrar em uma.</p>
+                <p class="text-xs text-muted-foreground/60">Volte ao Dashboard para criar ou entrar em uma.</p>
             </div>
 
             <ChatSidebar v-else-if="selectedCampaignId" :campaign-id="selectedCampaignId"

@@ -1,0 +1,48 @@
+d:\srd_sheet\src\components\campaign\ChatAttackCard.vue:43: <ChatRollResult title="Dano 💥" :formula="damage.formula" :breakdown="damage.breakdown" :result="damage.result" color-scheme="red" />
+d:\srd_sheet\src\components\campaign\notepad\NotepadToolbar.vue:50: Salvo ✓
+d:\srd_sheet\src\components\campaign\QuickNpcModal.vue:99: <button @click="$emit('close')" class="text-muted-foreground hover:text-foreground">✕</button>
+d:\srd_sheet\src\components\sheet\EditSheetModal.vue:359: <span :class="{ 'animate-bounce': isRolling }">🎲</span>
+d:\srd_sheet\src\components\sheet\EditSheetModal.vue:364: 🎯 Valor <strong>{{ selectedRoll.total }}</strong> — clique no atributo para aplicar
+d:\srd_sheet\src\components\sheet\EditSheetModal.vue:393: <div v-else class="p-6 text-center text-muted-foreground/60 text-sm">Clique em 🎲 para gerar valores e atribuir aos atributos.</div>
+d:\srd_sheet\src\components\sheet\EditSheetModal.vue:452: <span v-if="ch.skills[skill.name] !== undefined" class="text-primary-foreground text-[8px]">✓</span>
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:102: { value: 'generic', label: '🎲 Rolar Fórmula' },
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:103: { value: 'attack',  label: '⚔️ Ataque + Dano' },
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:104: { value: 'heal',    label: '💚 Cura' },
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:204: <h4 class="section-title">⚙️ Ativação & Estado</h4>
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:230: <h4 class="section-title">🎲 Rolagem</h4>
+d:\srd_sheet\src\components\sheet\ItemEditorModal.vue:298: <h4 class="section-title">📊 Modificadores</h4>
+d:\srd_sheet\src\components\sheet\ResourceEditorModal.vue:31: { value: 'long',   label: '💤 Descanso Longo (total)' },
+d:\srd_sheet\src\components\sheet\ResourceEditorModal.vue:32: { value: 'short',  label: '😴 Descanso Curto' },
+d:\srd_sheet\src\components\sheet\ResourceEditorModal.vue:33: { value: 'daily',  label: '🌅 Diário' },
+d:\srd_sheet\src\components\sheet\ResourceEditorModal.vue:34: { value: 'formula', label: '🎲 Rolar Fórmula de Recuperação' },
+d:\srd_sheet\src\components\sheet\ResourceEditorModal.vue:35: { value: 'manual', label: '✋ Apenas Manual' },
+d:\srd_sheet\src\components\sheet\SkillEditorModal.vue:71: <span class="text-lg">🎯</span>
+d:\srd_sheet\src\components\sheet\tabs\CharacteristicsTab.vue:179: {{ saving ? 'Salvando...' : '✓ Salvar Características' }}
+d:\srd_sheet\src\components\sheet\tabs\ConfigTab.vue:54: {{ tabsEditMode ? '✓ Concluir' : 'Editar Modificadores' }}
+d:\srd_sheet\src\components\sheet\tabs\ConfigTab.vue:158: 🗑️ Confirmar Exclusão
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:50: long: '💤 Desc. Longo',
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:51: short: '😴 Desc. Curto',
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:52: daily: '🌅 Diário',
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:53: formula: '🎲 Fórmula',
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:54: manual: '✋ Manual',
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:192: 📋 {{ buf.rollPassiveFormula }}
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:200: ⚔️ Atacar
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:205: 💚 Curar
+d:\srd_sheet\src\components\sheet\tabs\ResourcesTab.vue:210: 🎲 Rolar
+d:\srd_sheet\src\components\sheet\tabs\SkillsTab.vue:108: {{ tabsEditMode ? '✓ Concluir Edição' : 'Editar Perícias' }}
+d:\srd_sheet\src\components\wizard\FoundryImportModal.vue:124: <p>📦 Exportado pelo Foundry VTT com o sistema D35E</p>
+d:\srd_sheet\src\components\wizard\FoundryImportModal.vue:125: <p>📄 Arquivo no formato <code class="bg-accent px-1 rounded">.json</code></p>
+d:\srd_sheet\src\components\wizard\steps\SkillsStep.vue:191: <span v-if="isSelected(skill.name)" class="text-primary-foreground text-xs font-bold">✓</span>
+d:\srd_sheet\src\views\CreateSheetView.vue:501: <span v-if="allAssigned" class="text-primary font-bold ml-2">✓ Todos atribuídos!</span>
+d:\srd_sheet\src\views\CreateSheetView.vue:507: <span :class="{ 'inline-block animate-bounce': isRolling }">🎲</span>
+d:\srd_sheet\src\views\CreateSheetView.vue:519: 🎯 Valor <strong>{{ selectedRoll.total }}</strong> selecionado — clique no atributo desejado para aplicar, ou clique novamente para cancelar.
+d:\srd_sheet\src\views\CreateSheetView.vue:574: Clique em <strong class="text-muted-foreground">🎲 Rolar 6 Atributos</strong> para gerar os valores e distribuir entre os atributos.
+d:\srd_sheet\src\views\CreateSheetView.vue:580: 🎲 4d6 drop lowest · Você pode editar qualquer valor manualmente mesmo após rolar · Clique × no atributo para remover a atribuição
+d:\srd_sheet\src\views\CreateSheetView.vue:749: <span v-if="ch.skills[skill.name] !== undefined" class="text-primary-foreground text-[8px]">✓</span>
+d:\srd_sheet\src\views\EditSheetView.vue:416: <span v-if="allAssigned" class="text-primary font-bold ml-2">✓ Todos atribuídos!</span>
+d:\srd_sheet\src\views\EditSheetView.vue:421: <span :class="{ 'inline-block animate-bounce': isRolling }">🎲</span>
+d:\srd_sheet\src\views\EditSheetView.vue:429: 🎯 Valor <strong>{{ selectedRoll.total }}</strong> selecionado — clique no atributo desejado.
+d:\srd_sheet\src\views\EditSheetView.vue:459: Clique em <strong class="text-muted-foreground">🎲 Rolar 6 Atributos</strong> para gerar e distribuir entre os atributos.
+d:\srd_sheet\src\views\EditSheetView.vue:462: <p class="text-[11px] text-muted-foreground/60">🎲 4d6 drop lowest · Edite qualquer valor manualmente · Clique × para remover a atribuição</p>
+d:\srd_sheet\src\views\EditSheetView.vue:527: <span v-if="ch.skills[skill.name] !== undefined" class="text-primary-foreground text-[8px]">✓</span>
+d:\srd_sheet\src\views\SheetView.vue:528: <div class="text-4xl">🗑️</div>

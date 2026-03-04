@@ -188,7 +188,7 @@ function handleRankChange(skillName: string, value: string | number) {
           <!-- Checkbox visual -->
           <div class="w-5 h-5 rounded flex items-center justify-center shrink-0 border-2 transition-colors"
             :class="isSelected(skill.name) ? 'bg-primary border-primary' : 'border-muted-foreground'">
-            <span v-if="isSelected(skill.name)" class="text-primary-foreground text-xs font-bold">✓</span>
+            <span v-if="isSelected(skill.name)" class="text-primary-foreground text-xs font-bold"></span>
           </div>
 
           <!-- Skill info -->

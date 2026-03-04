@@ -98,16 +98,16 @@ onMounted(() => {
 
         <!-- Empty -->
         <div v-else-if="campaigns.length === 0"
-          class="flex flex-col items-center justify-center py-12 border-2 border-dashed border-zinc-800 rounded-xl bg-zinc-900/20">
-          <Sword class="w-10 h-10 text-zinc-700 mb-3" />
+          class="flex flex-col items-center justify-center py-12 border-2 border-dashed border-border rounded-xl bg-muted/20">
+          <Sword class="w-10 h-10 text-muted-foreground mb-3" />
           <p class="text-muted-foreground text-sm font-medium">Nenhuma campanha ativa</p>
-          <p class="text-xs text-zinc-500 mt-1">Crie uma nova ou entre com um código</p>
+          <p class="text-xs text-muted-foreground/70 mt-1">Crie uma nova ou entre com um código</p>
         </div>
 
         <!-- List -->
         <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div v-for="camp in campaigns" :key="camp.id"
-            class="group relative bg-zinc-900 border border-zinc-800 hover:border-primary/50 rounded-xl p-5 cursor-pointer transition-all hover:bg-zinc-900/80 hover:-translate-y-1 hover:shadow-lg"
+            class="group relative bg-card border border-border hover:border-primary/50 rounded-xl p-5 cursor-pointer transition-all hover:bg-card/80 hover:-translate-y-1 hover:shadow-lg"
             @click="router.push(`/campaign/${camp.id}`)">
             <div class="flex flex-col h-full min-h-[120px]">
                 <div class="flex justify-between items-start mb-2">
@@ -118,7 +118,7 @@ onMounted(() => {
                 <div class="flex items-center justify-between text-xs mt-4">
                     <span v-if="camp.dm_id === authStore.user?.id"
                             class="text-[10px] font-bold bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 uppercase">Mestre</span>
-                    <span v-else class="text-[10px] font-bold bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700 uppercase">Aventureiro</span>
+                    <span v-else class="text-[10px] font-bold bg-muted text-muted-foreground px-2 py-0.5 rounded border border-border uppercase">Aventureiro</span>
                     
                     <div class="text-muted-foreground flex items-center gap-1">
                             <Users class="w-3.5 h-3.5" /> Entrar
