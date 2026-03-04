@@ -34,11 +34,8 @@ function getSpellsByLevel(level: number) {
         .filter(item => item.spell.level === level)
 }
 
-function getStats(level: number): SpellSlotStats {
-    if (props.d?.spellSlots && props.d.spellSlots[level]) {
-        return props.d.spellSlots[level]
-    }
-    return { known: 0, perDay: 0, used: 0 }
+function handlePreparedRoll(_spellTitle: string, spell: any) {
+  if (spell) props.onSpellRoll(spell)
 }
 
 function updateStat(level: number, key: keyof SpellSlotStats, value: number) {
